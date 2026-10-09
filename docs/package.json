@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "gen": "node scripts/gen.mjs",
-    "dev": "npm run gen && vitepress dev",
-    "build": "npm run gen && vitepress build",
+    "artwork": "node scripts/copy-artwork.mjs",
+    "dev": "npm run artwork && vitepress dev",
+    "build": "npm run artwork && vitepress build",
     "preview": "vitepress preview"
   },
   "devDependencies": {

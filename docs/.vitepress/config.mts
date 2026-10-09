@@ -46,6 +46,10 @@ export default defineConfig({
     ],
     outline: { level: [2, 3] },
     search: { provider: 'local' },
+    editLink: {
+      pattern: 'https://github.com/mysticmind/pgsqlparser-dotnet/edit/main/docs/:path',
+      text: 'Edit this page on GitHub',
+    },
     socialLinks: [{ icon: 'github', link: 'https://github.com/mysticmind/pgsqlparser-dotnet' }],
     footer: {
       message: 'Released under the MIT License.',
