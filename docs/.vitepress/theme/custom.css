@@ -1,0 +1,35 @@
+/* The stock VitePress backgrounds, with accent colours taken from the library icon. */
+:root {
+  --vp-c-brand-1: #2a62a6;
+  --vp-c-brand-2: #3b7acb;
+  --vp-c-brand-3: #2f6db5;
+  --vp-c-brand-soft: rgba(47, 109, 181, 0.14);
+
+  --vp-button-brand-bg: #2f6db5;
+  --vp-button-brand-hover-bg: #3b7acb;
+  --vp-button-brand-active-bg: #2a62a6;
+
+  --vp-home-hero-name-color: #2f6db5;
+}
+
+.dark {
+  --vp-c-brand-1: #e8b656;
+  --vp-c-brand-2: #f0c97f;
+  --vp-c-brand-3: #d9902f;
+  --vp-c-brand-soft: rgba(232, 182, 86, 0.16);
+
+  --vp-button-brand-bg: #e8b656;
+  --vp-button-brand-hover-bg: #f0c97f;
+  --vp-button-brand-active-bg: #d9902f;
+  --vp-button-brand-text: #132a45;
+  --vp-button-brand-hover-text: #132a45;
+  --vp-button-brand-active-text: #132a45;
+
+  --vp-home-hero-name-color: #e8b656;
+}
+
+/* A larger logo in the navigation bar. */
+.VPNavBarTitle .logo {
+  height: 42px;
+  margin-right: 10px;
+}
