@@ -1,11 +1,18 @@
 name: CI Build
+# Changes that only touch documentation or license text do not run CI.
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE*'
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE*'
   workflow_dispatch:
 
 env:
