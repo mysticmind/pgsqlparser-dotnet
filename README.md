@@ -6,7 +6,7 @@ You can find further background to why a query's parse tree is useful here: [htt
 
 ## Installation
 
-```csharp
+```shell
 dotnet add package pgsqlparser
 ```
 
@@ -64,7 +64,7 @@ if (result.Error is null)
 
 ### Parse
 
-Parse SQL and return an Protobuf based AST
+Parse SQL and return a Protobuf based AST
 
 ```csharp
 using PgSqlParser;
@@ -79,12 +79,36 @@ if (result.Error is null)
 }
 
 // result.Value is a ParseResult AST object and the serialized JSON output is as below
-// { "version": 180006, "stmts": [ { "stmt": { "SelectStmt": { "targetList": [ { "ResTarget": { "val": { "A_Const": { "ival": { "ival": 1 }, "location": 7 } }, "location": 7 } } ], "limitOption": "LIMIT_OPTION_DEFAULT", "op": "SETOP_NONE" } } } ] }
+// { "version": 180006, "stmts": [ { "stmt": { "SelectStmt": { "targetList": [ { "ResTarget": { "val": { "A_Const": { "ival": { "ival": 1 }, "location": 7 } }, "location": 7 } } ], "limitOption": "LIMIT_OPTION_DEFAULT", "op": "SETOP_NONE" } }, "stmt_len": 8 }, { "stmt": { "SelectStmt": { "targetList": [ { "ResTarget": { "val": { "A_Const": { "ival": { "ival": 2 }, "location": 17 } }, "location": 17 } } ], "limitOption": "LIMIT_OPTION_DEFAULT", "op": "SETOP_NONE" } }, "stmt_location": 10 } ] }
 ```
 
-`Parse` can also take `ParseOptions` as a list of flags i.e. `ParserOptions.DisableBackslashQuote | ParserOptions.DisableEscapeStringWarning`
+`Parse` can also take `ParserOptions` as a list of flags i.e. `ParserOptions.DisableBackslashQuote | ParserOptions.DisableEscapeStringWarning`
+
+### Scan
+
+Tokenize a query. Each token has its kind, its keyword kind and its `Start` and `End` offsets in the query string.
+
+```csharp
+using PgSqlParser;
+
+var query = "SELECT 1";
+var result = Parser.Scan(query);
+
+if (result.Error is null)
+{
+    foreach (var token in result.Value!.Tokens)
+    {
+        Console.WriteLine($"{query[token.Start..token.End]}: {token.Token}");
+    }
+}
+
+// result.Value is a ScanResult object and the serialized JSON output is as below
+// { "version": 180006, "tokens": [ { "end": 6, "token": "SELECT", "keywordKind": "RESERVED_KEYWORD" }, { "start": 7, "end": 8, "token": "ICONST" } ] }
+```
 
 ### ParsePlpgsql
+
+Parse PL/pgSQL function bodies and return a JSON representation
 
 ```csharp
 using PgSqlParser;
@@ -115,12 +139,12 @@ if (result.Error is null)
 }
 
 // return JSON string
-// [{"PLpgSQL_function":{"datums":[{"PLpgSQL_var":{"refname":"found","datatype":{"PLpgSQL_type":{"typname":"pg_catalog.\"boolean\""}}}},{"PLpgSQL_var":{"refname":"r","lineno":3,"datatype":{"PLpgSQL_type":{"typname":"foo%rowtype"}}}},{"PLpgSQL_row":{"refname":"(unnamed row)","lineno":5,"fields":[{"name":"r","varno":1}]}}],"action":{"PLpgSQL_stmt_block":{"lineno":4,"body":[{"PLpgSQL_stmt_fors":{"lineno":5,"var":{"PLpgSQL_row":{"refname":"(unnamed row)","lineno":5,"fields":[{"name":"r","varno":1}]}},"body":[{"PLpgSQL_stmt_return_next":{"lineno":9}}],"query":{"PLpgSQL_expr":{"query":"SELECT * FROM foo WHERE fooid \u003e 0","parseMode":0}}}},{"PLpgSQL_stmt_return":{"lineno":11}}]}}}}]
+// [{"PLpgSQL_function":{"datums":[{"PLpgSQL_var":{"refname":"found","datatype":{"PLpgSQL_type":{"typname":"bool"}}}},{"PLpgSQL_var":{"refname":"r","lineno":3,"datatype":{"PLpgSQL_type":{"typname":"foo%rowtype"}}}},{"PLpgSQL_row":{"refname":"(unnamed row)","lineno":5,"fields":[{"name":"r","varno":1}]}}],"action":{"PLpgSQL_stmt_block":{"lineno":4,"body":[{"PLpgSQL_stmt_fors":{"lineno":5,"var":{"PLpgSQL_row":{"refname":"(unnamed row)","lineno":5,"fields":[{"name":"r","varno":1}]}},"body":[{"PLpgSQL_stmt_return_next":{"lineno":9}}],"query":{"PLpgSQL_expr":{"query":"SELECT * FROM foo WHERE fooid \u003e 0","parseMode":0}}}},{"PLpgSQL_stmt_return":{"lineno":11}}]}}}}]
 ```
 
 ### Fingerprint
 
-Generate a normalized hash (fingerprint) of a SQL statement — ignoring literals, whitespace, and minor variations
+Generate a normalized hash (fingerprint) of a SQL statement, ignoring literals, whitespace, and minor variations
 
 ```csharp
 using PgSqlParser;
@@ -315,9 +339,29 @@ if (result.Error is not null)
 // Output: syntax error at or near "SELEC"
 ```
 
+The `Error` also carries `CursorPos`, the position of the error in the query (see [Offsets and non-ASCII text](#offsets-and-non-ascii-text)), and the PostgreSQL source location that raised it in `FuncName`, `FileName` and `LineNo`.
+
+Two kinds of invalid input are caught before the query reaches libpg_query:
+
+- A `null` query throws `ArgumentNullException`.
+- A query containing a NUL character (`\0`) returns an `Error` with the message `query contains a NUL character`. PostgreSQL does not allow NUL in queries.
+
+## Upgrading from 1.x
+
+Version 2.0 moves from the PostgreSQL 17 parser to PostgreSQL 18, which changes some results:
+
+- **Parse tree**: node classes and fields follow PostgreSQL 18, and `ParseResult.Version` is `180006`.
+- **Fingerprints**: the default now follows PostgreSQL 18 query ID rules, so stored fingerprints for queries that use table aliases or schema names will change. Pass `FingerprintOptions.RangeVarPg17Compat` to keep the previous relation handling.
+- **Statement locations**: a statement now starts at its first non-whitespace, non-comment character. This affects `SplitWithParser` and `RawStmt.StmtLocation`; for `SELECT 1; SELECT 2` the second statement is at location 10 with length 8, where it was 9 and 9.
+- **Scan and Split offsets**: `Scan` token offsets and `SplitStmt` locations are UTF-16 offsets into the query string. In 1.x they were UTF-8 byte offsets, which differ as soon as the query contains non-ASCII text. Remove any conversion you did yourself.
+- **Errors**: `Error.FuncName` and `Error.FileName` now hold the function and file name. In 1.x `FuncName` held the message and the file name was missing.
+- **Dependencies**: the minimum `Google.Protobuf` version is 3.36.2.
+
 ## License
 
-Copyright (c) 2025, Babu Annamalai <babu.annamalai@gmail.com>
+PgSqlParser is licensed under the [MIT License](LICENSE).
+
+Copyright (c) 2026, Babu Annamalai <babu.annamalai@gmail.com>
 
 Refer to [libpg_query license](https://github.com/pganalyze/libpg_query?tab=readme-ov-file#license) for license details on libpg_query.
 

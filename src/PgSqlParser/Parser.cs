@@ -356,7 +356,7 @@ public static class Parser
     }
 
     /// <summary>
-    /// Generate a normalized hash (fingerprint) of a SQL statement — ignoring literals, whitespace, and minor variations
+    /// Generate a normalized hash (fingerprint) of a SQL statement, ignoring literals, whitespace, and minor variations
     /// </summary>
     /// <param name="query"></param>
     /// <param name="parserOptions"></param>
@@ -383,7 +383,7 @@ public static class Parser
     }
     
     /// <summary>
-    /// Async generate a normalized hash (fingerprint) of a SQL statement — ignoring literals, whitespace, and minor variations
+    /// Async generate a normalized hash (fingerprint) of a SQL statement, ignoring literals, whitespace, and minor variations
     /// </summary>
     /// <param name="query"></param>
     /// <param name="parserOptions"></param>
@@ -397,7 +397,7 @@ public static class Parser
     }
 
     /// <summary>
-    /// Async generate a normalized hash (fingerprint) of a SQL statement — ignoring literals, whitespace, and minor variations
+    /// Async generate a normalized hash (fingerprint) of a SQL statement, ignoring literals, whitespace, and minor variations
     /// </summary>
     /// <param name="query"></param>
     /// <param name="parserOptions"></param>
