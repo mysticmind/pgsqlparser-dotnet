@@ -237,6 +237,14 @@ public class AnalysisTests
     }
 
     [Fact]
+    public void LockingClauseTargetsAreNotTables()
+    {
+        var references = Parser.Parse("SELECT * FROM accounts a JOIN users u ON true FOR UPDATE OF a").GetValueOrThrow().GetReferences();
+
+        references.Tables.Select(table => table.Name).ShouldBe(["accounts", "users"]);
+    }
+
+    [Fact]
     public void ReferencesFromASingleStatementNode()
     {
         var tree = Parser.Parse("WITH r AS (SELECT 1) INSERT INTO target SELECT x FROM r; CREATE INDEX i ON items (sku)").GetValueOrThrow();

@@ -51,6 +51,20 @@ public sealed class PlpgsqlNode
         return Json.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     }
 
+    /// <summary>
+    /// Parses the SQL of a <c>PLpgSQL_expr</c> node, in the mode PL/pgSQL itself uses for it: a query, an
+    /// expression (parsed as <c>SELECT expression</c>) or an assignment. Fails for any other kind of node.
+    /// </summary>
+    public Result<ParseResult> ParseQuery()
+    {
+        if (Kind != "PLpgSQL_expr" || GetString("query") is not { } query)
+            return Result<ParseResult>.Failure(new Error($"a {Kind} node holds no SQL to parse", null, null, 0, 0, null));
+
+        // parseMode is PostgreSQL's RawParseMode, which ParserOptions uses the same numbers for.
+        var mode = Json.TryGetProperty("parseMode", out var value) && value.TryGetInt32(out var number) ? number : 0;
+        return Parser.Parse(query, (ParserOptions)mode);
+    }
+
     public override string ToString() => Kind;
 
     // A node is serialized as an object with one property: its kind, holding the node's fields.
@@ -153,5 +167,33 @@ public sealed class PlpgsqlFunction
             .OfType<string>();
     }
 
+    /// <summary>
+    /// Parses every expression and query in the function, in document order. Each item has the node,
+    /// its SQL text, and either the parse tree or the error.
+    /// </summary>
+    public IReadOnlyList<PlpgsqlQuery> ParseQueries()
+    {
+        var queries = new List<PlpgsqlQuery>();
+        foreach (var node in Root.Descendants())
+        {
+            if (node.Kind != "PLpgSQL_expr" || node.GetString("query") is not { } sql)
+                continue;
+
+            var parsed = node.ParseQuery();
+            queries.Add(new PlpgsqlQuery(node, sql, parsed.Value, parsed.Error));
+        }
+
+        return queries;
+    }
+
     private static PlpgsqlNode? ToNode(JsonElement element) => PlpgsqlNode.TryCreate(element, out var node) ? node : null;
 }
+
+/// <summary>
+/// A piece of SQL inside a PL/pgSQL function, parsed by <see cref="PlpgsqlFunction.ParseQueries"/>.
+/// </summary>
+/// <param name="Node">The <c>PLpgSQL_expr</c> node it comes from.</param>
+/// <param name="Sql">The SQL text as written in the function.</param>
+/// <param name="Tree">The parse tree, or null if it did not parse.</param>
+/// <param name="Error">Why it did not parse, or null.</param>
+public sealed record PlpgsqlQuery(PlpgsqlNode Node, string Sql, ParseResult? Tree, Error? Error);
