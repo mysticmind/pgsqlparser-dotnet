@@ -287,6 +287,81 @@ if (result.Error is null)
 // { "version": 180006, "tokens": [ { "end": 6, "token": "SELECT", "keywordKind": "RESERVED_KEYWORD" }, { "start": 7, "end": 8, "token": "ICONST" } ] }
 ```
 
+### Classify
+
+Get the facts about each statement: its kind, whether it is read-only, and anything that makes a harmless-looking statement write. This is the basis for read/write routing and for checking SQL before running it.
+
+```csharp
+using PgSqlParser;
+
+foreach (var info in Parser.Classify("SELECT 1; WITH gone AS (DELETE FROM t RETURNING *) SELECT * FROM gone; EXPLAIN ANALYZE DELETE FROM t").GetValueOrThrow())
+{
+    Console.WriteLine($"{info.Kind}: read-only {info.IsReadOnly}");
+}
+// Output:
+// Select: read-only True
+// Select: read-only False    (HasDataModifyingCte is true)
+// Explain: read-only False   (ExecutesInner is true, and Inner is a DELETE)
+```
+
+`StatementInfo` also has `IsUtility`, `HasSelectInto`, `HasLockingClause`, `RunsProgram` and `Inner` (the statement wrapped by EXPLAIN, PREPARE, DECLARE CURSOR, CREATE TABLE AS or COPY). `IsReadOnly` errs on the side of false: CALL, DO and EXECUTE are not read-only because what they run is not visible. A function called from a SELECT can still write, which no parser can see. These are facts, not a security boundary; what to allow is up to you.
+
+### References
+
+Find the tables, functions and columns a query refers to, as parse tree nodes with their role:
+
+```csharp
+using PgSqlParser;
+
+var tree = Parser.Parse(
+    "WITH recent AS (SELECT * FROM orders) " +
+    "UPDATE customers c SET total = r.total FROM recent r WHERE r.customer_id = c.id").GetValueOrThrow();
+var references = tree.GetReferences();
+
+foreach (var table in references.Tables)
+{
+    Console.WriteLine($"{table.Name}: {table.Role}{(table.IsCte ? " (a CTE, not a table)" : "")}");
+}
+// Output:
+// customers: Write
+// recent: Read (a CTE, not a table)
+// orders: Read
+
+foreach (var column in references.Columns)
+{
+    Console.WriteLine($"{column} -> {column.Table?.Name ?? "unknown"}");
+}
+// Output:
+// r.total -> unknown        (recent is a CTE)
+// r.customer_id -> unknown
+// c.id -> customers
+// * -> orders
+```
+
+A column is matched to its table when the query alone settles it: its qualifier names a table or alias in scope, or it has no qualifier and there is only one table in scope. Otherwise `Table` is null, because it would take the database catalog to tell. `Summary` returns similar information as plain names and is faster; use `GetReferences` when you need the nodes, aliases or column matching.
+
+### Format
+
+Format a query across indented lines, keeping its comments. Each statement of a script is formatted on its own.
+
+```csharp
+using PgSqlParser;
+
+var formatted = Parser.Format("select a, b from t -- pick\n where x = 1; delete from t where a = 1").GetValueOrThrow();
+Console.WriteLine(formatted);
+// Output:
+// SELECT a, b
+// FROM t
+// WHERE
+//     -- pick
+//     x = 1;
+//
+// DELETE FROM t
+// WHERE a = 1;
+```
+
+`FormatOptions` sets the indent size, the line length, comma placement, a trailing newline, and whether comments are kept.
+
 ### ParameterRefs
 
 Find the parameter references (`$1`, `$2`, ...) in a query, with where each one is in the query string. References inside string literals and comments are not parameters and are left out.
@@ -566,6 +641,19 @@ if (result.Error is not null)
 // Output: syntax error at or near "SELEC"
 ```
 
+`error.Format(query)` renders the error the way psql does, with the line it points at, and `error.GetLineAndColumn(query)` gives the position:
+
+```csharp
+var query = "SELECT a,\n  b FROM WHERE x";
+var error = Parser.Parse(query).Error!;
+
+Console.WriteLine(error.Format(query));
+// Output:
+// ERROR:  syntax error at or near "WHERE"
+// LINE 2:   b FROM WHERE x
+//                  ^
+```
+
 The `Error` also carries `CursorPos`, the position of the error in the query (see [Offsets and non-ASCII text](#offsets-and-non-ascii-text)), and the PostgreSQL source location that raised it in `FuncName`, `FileName` and `LineNo`.
 
 Two kinds of invalid input are caught before the query reaches libpg_query:
@@ -576,6 +664,15 @@ Two kinds of invalid input are caught before the query reaches libpg_query:
 Deeply nested queries, such as a long chain of operators without parentheses (`a || b || c ...`) or many nested subqueries, are read on a dedicated thread with a large enough stack, so they cannot overflow the stack of the calling thread. A parse tree nested more than 4000 levels deep is rejected with an `Error`. The PostgreSQL parser has its own limit, which depends on the stack available to the calling thread and reports `stack depth limit exceeded`.
 
 Protobuf's own recursive operations on a parse tree, such as `ToString()`, `Clone()` and `Equals()`, run on your thread. On a very deeply nested tree they can still overflow a small stack.
+
+## What's new in 2.2
+
+All additions; nothing from earlier versions changes.
+
+- **Classify statements**: `Parser.Classify` gives each statement's kind, whether it is read-only, and facts such as a data-modifying CTE, `SELECT INTO`, a locking clause or `EXPLAIN ANALYZE`.
+- **Resolved references**: `GetReferences` returns the tables, functions and columns of a query as nodes, with table roles (read, write, DDL), CTE detection and columns matched to their table.
+- **Format in one call**: `Parser.Format` pretty prints a query or a script and keeps its comments.
+- **Readable errors**: `Error.Format` and `Error.GetLineAndColumn`.
 
 ## What's new in 2.1
 

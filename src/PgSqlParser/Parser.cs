@@ -41,6 +41,50 @@ public record Error(string? Message, string? FuncName, string? FileName, int Lin
 
         return charOffset;
     }
+
+    /// <summary>
+    /// Returns the 1-based line and column of <see cref="CursorPos"/> in <paramref name="query"/>, or
+    /// null if the error has no position in it. The column counts UTF-16 chars.
+    /// </summary>
+    public (int Line, int Column)? GetLineAndColumn(string query)
+    {
+        var offset = GetCursorCharOffset(query);
+        if (offset < 0)
+            return null;
+
+        var line = 1;
+        var lineStart = 0;
+        for (var i = 0; i < offset; i++)
+        {
+            if (query[i] == '\n')
+            {
+                line++;
+                lineStart = i + 1;
+            }
+        }
+
+        return (line, offset - lineStart + 1);
+    }
+
+    /// <summary>
+    /// Formats the error the way psql does: the message, then the line of <paramref name="query"/> it
+    /// points at with a caret under the position.
+    /// </summary>
+    public string Format(string query)
+    {
+        var header = $"ERROR:  {Message}";
+        if (GetLineAndColumn(query) is not var (line, column))
+            return header;
+
+        var offset = GetCursorCharOffset(query);
+        var lineStart = offset - (column - 1);
+        var lineEnd = query.IndexOf('\n', lineStart);
+        // Tabs become spaces so the caret lines up whatever the tab width.
+        var text = query[lineStart..(lineEnd < 0 ? query.Length : lineEnd)].TrimEnd('\r').Replace('\t', ' ');
+        var prefix = $"LINE {line}: ";
+
+        return $"{header}\n{prefix}{text}\n{new string(' ', prefix.Length + column - 1)}^";
+    }
 }
 
 /// <summary>
@@ -215,6 +259,27 @@ public class DeparseOptions
     public bool TrailingNewline { get; init; }
 
     /// <summary>Place separating commas at the start of the line when pretty printing.</summary>
+    public bool CommasStartOfLine { get; init; }
+}
+
+/// <summary>
+/// Options for <see cref="Parser.Format"/>.
+/// </summary>
+public class FormatOptions
+{
+    /// <summary>Keep the comments of the query. On by default.</summary>
+    public bool KeepComments { get; init; } = true;
+
+    /// <summary>Indentation size in spaces.</summary>
+    public int IndentSize { get; init; } = 4;
+
+    /// <summary>Restricts the line length of certain lists of items.</summary>
+    public int MaxLineLength { get; init; } = 80;
+
+    /// <summary>Add a trailing newline at the end of the output.</summary>
+    public bool TrailingNewline { get; init; }
+
+    /// <summary>Place separating commas at the start of the line.</summary>
     public bool CommasStartOfLine { get; init; }
 }
 
@@ -901,6 +966,114 @@ public static class Parser
             FreeDeparseComments(comments, commentCount);
             Marshal.FreeHGlobal(parseTree.data);
         }
+    }
+
+    /// <summary>
+    /// Format a query: parse it and print it again across indented lines, keeping its comments.
+    /// This is <see cref="Parse"/>, <see cref="DeparseComments"/> and <see cref="Deparse(ParseResult, DeparseOptions)"/>
+    /// with pretty printing in one call.
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="options"></param>
+    /// <returns></returns>
+    public static Result<string> Format(string query, FormatOptions? options = null)
+    {
+        options ??= new FormatOptions();
+
+        // Each statement is formatted on its own and they are joined one per paragraph. The scanner
+        // split keeps the comments in front of a statement together with it.
+        if (!SplitWithScanner(query).TryGetValue(out var split, out var error))
+            return Result<string>.Failure(error);
+
+        var formatted = new List<string>();
+        var end = 0;
+        foreach (var statement in split.Statements)
+        {
+            if (!FormatStatement(statement.Text.Trim(), options).TryGetValue(out var text, out error))
+                return Result<string>.Failure(error);
+
+            if (text.Length > 0)
+                formatted.Add(text.TrimEnd('\n'));
+
+            end = statement.Location + statement.Length;
+        }
+
+        var result = string.Join(";\n\n", formatted);
+        if (formatted.Count > 1)
+            result += ";";
+
+        // What follows the last statement can only be comments.
+        var tail = query[end..].Trim().TrimStart(';').Trim();
+        if (options.KeepComments && tail.Length > 0)
+            result = result.Length == 0 ? tail : $"{result}\n\n{tail}";
+
+        return Result<string>.Success(options.TrailingNewline && result.Length > 0 ? result + "\n" : result);
+    }
+
+    private static Result<string> FormatStatement(string statement, FormatOptions options)
+    {
+        if (!Parse(statement).TryGetValue(out var tree, out var error))
+            return Result<string>.Failure(error);
+
+        // Only comments, or nothing at all.
+        if (tree.Stmts.Count == 0)
+            return Result<string>.Success(options.KeepComments ? statement : string.Empty);
+
+        IReadOnlyList<DeparseComment> comments = [];
+        if (options.KeepComments)
+        {
+            if (!DeparseComments(statement).TryGetValue(out var found, out error))
+                return Result<string>.Failure(error);
+
+            comments = found;
+        }
+
+        return Deparse(tree, new DeparseOptions
+        {
+            Comments = comments,
+            PrettyPrint = true,
+            IndentSize = options.IndentSize,
+            MaxLineLength = options.MaxLineLength,
+            CommasStartOfLine = options.CommasStartOfLine
+        });
+    }
+
+    /// <summary>
+    /// Async format a query
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="options"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public static Task<Result<string>> FormatAsync(string query, FormatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        return RunAsync(() => Format(query, options), cancellationToken);
+    }
+
+    /// <summary>
+    /// Classify each statement of a query: its kind, whether it is read-only, and facts such as a
+    /// data-modifying CTE or a locking clause. See <see cref="StatementInfo"/>.
+    /// </summary>
+    /// <param name="query"></param>
+    /// <returns></returns>
+    public static Result<IReadOnlyList<StatementInfo>> Classify(string query)
+    {
+        return Parse(query).TryGetValue(out var tree, out var error)
+            ? Result<IReadOnlyList<StatementInfo>>.Success(tree.Classify())
+            : Result<IReadOnlyList<StatementInfo>>.Failure(error);
+    }
+
+    /// <summary>
+    /// Async classify each statement of a query
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public static Task<Result<IReadOnlyList<StatementInfo>>> ClassifyAsync(string query,
+        CancellationToken cancellationToken = default)
+    {
+        return RunAsync(() => Classify(query), cancellationToken);
     }
 
     /// <summary>

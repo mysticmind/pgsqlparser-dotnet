@@ -65,6 +65,13 @@ Check("EqualsIgnoringLocations", edited.EqualsIgnoringLocations(Parser.Parse("se
 Check("ParseExpression", Parser.ParseExpression("(a > 0)").Value?.Deparse().Value == "a > 0");
 Check("ParseTypeName", Parser.ParseTypeName("character varying(20)").Value?.Deparse().Value == "varchar(20)");
 Check("PgIdentifier", PgIdentifier.Quote("public", "order") == "public.\"order\"");
+var classified = Parser.Classify("WITH d AS (DELETE FROM t RETURNING 1) SELECT * FROM d; EXPLAIN SELECT 1").Value!;
+Check("Classify", classified is [{ Kind: StatementKind.Select, IsReadOnly: false }, { Kind: StatementKind.Explain, IsReadOnly: true }]);
+var refs = Parser.Parse("UPDATE a SET x = b.y FROM b WHERE b.id = a.id").Value!.GetReferences();
+Check("GetReferences", refs.Tables.Select(t => t.Role).SequenceEqual([TableRole.Write, TableRole.Read])
+                       && refs.Columns.All(c => c.Table is not null));
+Check("Format", Parser.Format("select a from t -- note\n where x = 1").Value == "SELECT a\nFROM t\nWHERE\n    -- note\n    x = 1");
+Check("Error.Format", Parser.Parse("SELECT FROM WHERE").Error!.Format("SELECT FROM WHERE").EndsWith("            ^"));
 Check("ParameterRefs", Parser.ParameterRefs("SELECT $1, '$2', $3").Value?.Select(p => p.Number).SequenceEqual([1, 3]) == true);
 Check("ParsePlpgsqlFunctions", Parser.ParsePlpgsqlFunctions(
     "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql").Value?[0].Queries().SequenceEqual(["1"]) == true);
