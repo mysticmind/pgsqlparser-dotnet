@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/mysticmind/pgsqlparser-dotnet/main/assets/icon.png" alt="PgSqlParser icon: an elephant holding a parse tree" width="96" align="right">
+
 # PgSqlParser [![Nuget Package](https://badgen.net/nuget/v/pgsqlparser)](https://www.nuget.org/packages/pgsqlparser/)
 
 .NET version of [https://github.com/pganalyze/libpg_query](https://github.com/pganalyze/libpg_query). This .NET wrapper on libpg_query C library which uses the actual PostgreSQL server source to parse SQL queries and return the internal PostgreSQL parse tree.
