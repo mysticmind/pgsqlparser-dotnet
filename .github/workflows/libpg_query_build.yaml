@@ -11,7 +11,7 @@ jobs:
             artifacts_path: "artifacts/linux-x64"
           - os: windows-latest
             artifacts_path: "artifacts/win-x64"
-          - os: macos-13
+          - os: macos-15-intel
             artifacts_path: "artifacts/osx-x64"  
           - os: macos-latest
             artifacts_path: "artifacts/osx-arm64"
