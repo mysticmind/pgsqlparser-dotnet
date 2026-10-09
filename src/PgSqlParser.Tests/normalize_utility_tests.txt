@@ -38,6 +38,38 @@ ALTER USER MAPPING FOR bob SERVER foo OPTIONS (SET password 'public')
 ALTER USER MAPPING FOR bob SERVER foo OPTIONS (SET password $1)
 MERGE into measurement m USING new_measurement nm ON (m.city_id = nm.city_id and m.logdate=nm.logdate) WHEN MATCHED AND nm.peaktemp IS NULL THEN DELETE WHEN MATCHED THEN UPDATE SET peaktemp = greatest(m.peaktemp, nm.peaktemp), unitsales = m.unitsales + coalesce(nm.unitsales, 0) WHEN NOT MATCHED THEN INSERT (city_id, logdate, peaktemp, unitsales) VALUES (city_id, logdate, peaktemp, unitsales)
 MERGE into measurement m USING new_measurement nm ON (m.city_id = nm.city_id and m.logdate=nm.logdate) WHEN MATCHED AND nm.peaktemp IS NULL THEN DELETE WHEN MATCHED THEN UPDATE SET peaktemp = greatest(m.peaktemp, nm.peaktemp), unitsales = m.unitsales + coalesce(nm.unitsales, 0) WHEN NOT MATCHED THEN INSERT (city_id, logdate, peaktemp, unitsales) VALUES (city_id, logdate, peaktemp, unitsales)
+DO language E'plpgsql' 'BEGIN PERFORM 1; END'
+DO language E'plpgsql' 'BEGIN PERFORM 1; END'
+DO U&'' '' ''
+DO U&'' '' ''
+NOTIFY channel, 'a'
+NOTIFY channel, $1
+NOTIFY channel, 'b'
+NOTIFY channel, $1
+NOTIFY channel, 'some text to normalize'
+NOTIFY channel, $1
+NOTIFY channel
+NOTIFY channel
+do language a$b $$xx$$ 'yy'
+do language a$b $$xx$$ 'yy'
+DO LANGUAGE a$b $$xxx$$
+DO LANGUAGE a$b $$xxx$$
+DO LANGUAGE "la$nguage" $$x$$
+DO LANGUAGE "la$nguage" $$x$$
+NOTIFY "a,'b", 'p'
+NOTIFY "a,'b", $1
+CREATE SUBSCRIPTION s0 CONNECTION e'\x41' PUBLICATION p0; CREATE SUBSCRIPTION s1 CONNECTION e'\x54' PUBLICATION p1
+CREATE SUBSCRIPTION s0 CONNECTION $1 PUBLICATION p0; CREATE SUBSCRIPTION s1 CONNECTION $2 PUBLICATION p1
+CREATE SUBSCRIPTION s1 CONNECTION 'CREATE' PUBLICATION p1
+CREATE SUBSCRIPTION s1 CONNECTION $1 PUBLICATION p1
+CREATE SUBSCRIPTION s1 CONNECTION '' PUBLICATION p1
+CREATE SUBSCRIPTION s1 CONNECTION $1 PUBLICATION p1
+CREATE ROLE r PASSWORD U&'d\0061t\+000061'
+CREATE ROLE r PASSWORD $1
+CREATE FUNCTION functest(a text) RETURNS bool LANGUAGE SQL RETURN a = 'abcd'
+CREATE FUNCTION functest(a text) RETURNS bool LANGUAGE SQL RETURN a = 'abcd'
+CREATE FUNCTION f() RETURNS int LANGUAGE c AS 'obj_file', 'link_symbol'
+CREATE FUNCTION f() RETURNS int LANGUAGE c AS 'obj_file', 'link_symbol'
 DECLARE cursor_b CURSOR FOR SELECT * FROM x WHERE id = 123
 DECLARE cursor_b CURSOR FOR SELECT * FROM x WHERE id = 123
 FETCH 1000 FROM cursor_a
@@ -46,3 +78,7 @@ CLOSE cursor_a
 CLOSE cursor_a
 SELECT 1; ALTER USER a WITH PASSWORD 'b'
 SELECT 1; ALTER USER a WITH PASSWORD $1
+SELECT 3,$2147483647
+SELECT 3,$2147483647
+SELECT - /* comment */ 1, 'a' -- comment\n'b'
+SELECT - /* comment */ 1, 'a' -- comment\n'b'

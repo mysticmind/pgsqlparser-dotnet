@@ -64,9 +64,9 @@ public class Utf8OffsetMapperTests
         var split = Parser.SplitWithParser(query).Value!.Statements;
         var mapper = new Utf8OffsetMapper(query);
 
-        // The second statement starts at byte 15, which is UTF-16 offset 14.
+        // The second statement starts at byte 16, which is UTF-16 offset 15.
         var second = statements[1];
-        second.StmtLocation.ShouldBe(15);
+        second.StmtLocation.ShouldBe(16);
         var start = mapper.ToCharOffset(second.StmtLocation);
         var end = mapper.ToCharOffset(second.StmtLocation + second.StmtLen);
 

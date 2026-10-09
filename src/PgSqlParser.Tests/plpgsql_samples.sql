@@ -3,14 +3,14 @@
 CREATE OR REPLACE FUNCTION get_all_foo() RETURNS SETOF foo AS
 $BODY$
 DECLARE
-r foo%rowtype;
+    r foo%rowtype;
 BEGIN
-FOR r IN
-SELECT * FROM foo WHERE fooid > 0
+    FOR r IN
+        SELECT * FROM foo WHERE fooid > 0
     LOOP
         -- can do some processing here
         RETURN NEXT r; -- return current row of SELECT
-END LOOP;
+    END LOOP;
     RETURN;
 END
 $BODY$
@@ -19,19 +19,19 @@ LANGUAGE plpgsql;
 CREATE FUNCTION get_available_flightid(date) RETURNS SETOF integer AS
 $BODY$
 BEGIN
-RETURN QUERY SELECT flightid
+    RETURN QUERY SELECT flightid
                    FROM flight
                   WHERE flightdate >= $1
                     AND flightdate < ($1 + 1);
 
--- Since execution is not finished, we can check whether rows were returned
--- and raise exception if not.
-IF NOT FOUND THEN
+    -- Since execution is not finished, we can check whether rows were returned
+    -- and raise exception if not.
+    IF NOT FOUND THEN
         RAISE EXCEPTION 'No flight at %.', $1;
-END IF;
+    END IF;
 
     RETURN;
-END
+ END
 $BODY$
 LANGUAGE plpgsql;
 
@@ -43,8 +43,8 @@ RETURNS varchar AS $$
 BEGIN
   IF v_version IS NULL THEN
     RETURN v_name;
-END IF;
-RETURN v_name || '/' || v_version;
+  END IF;
+  RETURN v_name || '/' || v_version;
 END;$$;
 
 -- CREATE OR REPLACE FUNCTION cs_update_referrer_type_proc() RETURNS void AS $func$
@@ -83,7 +83,7 @@ CREATE OR REPLACE FUNCTION cs_parse_url(
     v_query OUT VARCHAR) -- And this one
 AS $$
 DECLARE
-a_pos1 INTEGER;
+    a_pos1 INTEGER;
     a_pos2 INTEGER;
 BEGIN
     v_host := NULL;
@@ -93,13 +93,13 @@ BEGIN
 
     IF a_pos1 = 0 THEN
         RETURN;
-END IF;
+    END IF;
     a_pos2 := instr(v_url, '/', a_pos1 + 2);
     IF a_pos2 = 0 THEN
         v_host := substr(v_url, a_pos1 + 2);
         v_path := '/';
         RETURN;
-END IF;
+    END IF;
 
     v_host := substr(v_url, a_pos1 + 2, a_pos2 - a_pos1 - 2);
     a_pos1 := instr(v_url, '?', a_pos2 + 1);
@@ -107,7 +107,7 @@ END IF;
     IF a_pos1 = 0 THEN
         v_path := substr(v_url, a_pos2);
         RETURN;
-END IF;
+    END IF;
 
     v_path := substr(v_url, a_pos2, a_pos1 - a_pos2);
     v_query := substr(v_url, a_pos1 + 1);
@@ -116,41 +116,41 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION cs_create_job(v_job_id integer) RETURNS void AS $$
 DECLARE
-a_running_job_count integer;
+    a_running_job_count integer;
 BEGIN
     LOCK TABLE cs_jobs IN EXCLUSIVE MODE;
 
-SELECT count(*) INTO a_running_job_count FROM cs_jobs WHERE end_stamp IS NULL;
+    SELECT count(*) INTO a_running_job_count FROM cs_jobs WHERE end_stamp IS NULL;
 
-IF a_running_job_count > 0 THEN
+    IF a_running_job_count > 0 THEN
         RAISE EXCEPTION 'Unable to create a new job: a job is currently running';
-END IF;
+    END IF;
 
-DELETE FROM cs_active_job;
-INSERT INTO cs_active_job(job_id) VALUES (v_job_id);
+    DELETE FROM cs_active_job;
+    INSERT INTO cs_active_job(job_id) VALUES (v_job_id);
 
-BEGIN
-INSERT INTO cs_jobs (job_id, start_stamp) VALUES (v_job_id, now());
-EXCEPTION
+    BEGIN
+        INSERT INTO cs_jobs (job_id, start_stamp) VALUES (v_job_id, now());
+    EXCEPTION
         WHEN unique_violation THEN
             -- don't worry if it already exists
-END;
+    END;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE FUNCTION instr(varchar, varchar) RETURNS integer AS $$
 DECLARE
-pos integer;
+    pos integer;
 BEGIN
     pos:= instr($1, $2, 1);
-RETURN pos;
+    RETURN pos;
 END;
 $$ LANGUAGE plpgsql STRICT IMMUTABLE;
 
 CREATE FUNCTION instr(string varchar, string_to_search varchar, beg_index integer)
-    RETURNS integer AS $$
+RETURNS integer AS $$
 DECLARE
-pos integer NOT NULL DEFAULT 0;
+    pos integer NOT NULL DEFAULT 0;
     temp_str varchar;
     beg integer;
     length integer;
@@ -162,9 +162,9 @@ BEGIN
 
         IF pos = 0 THEN
             RETURN 0;
-ELSE
+        ELSE
             RETURN pos + beg_index - 1;
-END IF;
+        END IF;
     ELSIF beg_index < 0 THEN
         ss_length := char_length(string_to_search);
         length := char_length(string);
@@ -176,23 +176,23 @@ END IF;
 
             IF pos > 0 THEN
                 RETURN beg;
-END IF;
+            END IF;
 
             beg := beg - 1;
-END LOOP;
+        END LOOP;
 
-RETURN 0;
-ELSE
         RETURN 0;
-END IF;
+    ELSE
+        RETURN 0;
+    END IF;
 END;
 $$ LANGUAGE plpgsql STRICT IMMUTABLE;
 
 CREATE FUNCTION instr(string varchar, string_to_search varchar,
                       beg_index integer, occur_index integer)
-    RETURNS integer AS $$
+RETURNS integer AS $$
 DECLARE
-pos integer NOT NULL DEFAULT 0;
+    pos integer NOT NULL DEFAULT 0;
     occur_number integer NOT NULL DEFAULT 0;
     temp_str varchar;
     beg integer;
@@ -204,23 +204,23 @@ BEGIN
         beg := beg_index;
         temp_str := substring(string FROM beg_index);
 
-FOR i IN 1..occur_index LOOP
+        FOR i IN 1..occur_index LOOP
             pos := position(string_to_search IN temp_str);
 
             IF i = 1 THEN
                 beg := beg + pos - 1;
-ELSE
+            ELSE
                 beg := beg + pos;
-END IF;
+            END IF;
 
             temp_str := substring(string FROM beg + 1);
-END LOOP;
+        END LOOP;
 
         IF pos = 0 THEN
             RETURN 0;
-ELSE
+        ELSE
             RETURN beg;
-END IF;
+        END IF;
     ELSIF beg_index < 0 THEN
         ss_length := char_length(string_to_search);
         length := char_length(string);
@@ -235,16 +235,16 @@ END IF;
 
                 IF occur_number = occur_index THEN
                     RETURN beg;
-END IF;
-END IF;
+                END IF;
+            END IF;
 
             beg := beg - 1;
-END LOOP;
+        END LOOP;
 
-RETURN 0;
-ELSE
         RETURN 0;
-END IF;
+    ELSE
+        RETURN 0;
+    END IF;
 END;
 $$ LANGUAGE plpgsql STRICT IMMUTABLE;
 
@@ -255,9 +255,9 @@ CREATE FUNCTION displayDate(endDate date, canceled boolean) RETURNS text
     AS $$BEGIN
 	IF canceled = true THEN
 		return null;
-ELSE
+	ELSE
 		return endDate;
-END IF;
+	END IF;
 END;$$;
 
 CREATE FUNCTION calcule_theYear_these(date_inscription date, date_observation date) RETURNS smallint
@@ -270,7 +270,7 @@ CREATE FUNCTION calcule_duree(origine date, atDate date) RETURNS integer
     LANGUAGE plpgsql
     AS $$DECLARE
 	theDay INTEGER;
-theMonth INTEGER;
+	theMonth INTEGER;
 	theYear INTEGER;
 	theDay_now INTEGER;
 	theMonth_now INTEGER;
@@ -289,13 +289,13 @@ BEGIN
 		IF theMonth = theMonth_now THEN
 			IF theDay > theDay_now THEN
 				theYear := theYear - 1;
-END IF;
-ELSE
+			END IF;
+		ELSE
 			theYear := theYear - 1;
-END IF;
-END IF;
+		END IF;
+	END IF;
 
-return theYear;
+	return theYear;
 END;$$;
 
 CREATE FUNCTION endDatedUID(uidmember character varying) RETURNS integer
@@ -304,46 +304,46 @@ CREATE FUNCTION endDatedUID(uidmember character varying) RETURNS integer
 	memberID int4;
 
 BEGIN
-SELECT key INTO memberID
-FROM
-    member
-WHERE
-    uidmember = uid;
+	SELECT key INTO memberID
+	FROM
+		member
+	WHERE
+		uidmember = uid;
 
-RETURN memberID;
+	RETURN memberID;
 END;$$;
 
 CREATE FUNCTION currentEmployer(memberID integer, jobID integer, jobEnd date) RETURNS boolean
     LANGUAGE plpgsql
     AS $$DECLARE
 	lastJob RECORD;
-lastEmployer record;
+	lastEmployer record;
 	updateJob BOOL;
 BEGIN
 	updateJob := false;
 
-SELECT * INTO lastJob FROM lire_lastJob(memberID) AS (jobID INT,startsupport DATE,jobEnd DATE);
-IF lastJob.jobID = jobID THEN
-SELECT
-    r_perlab.key AS positionHeld,
-    r_perlab.endDate AS positionEnd
-INTO lastEmployer
-FROM
-    r_perlab,
-    (SELECT
-         r_perlab.key_member AS col_memberID,
-         max(r_perlab.start) AS startrattachement
-     FROM r_perlab
-     GROUP BY col_memberID) positions
-WHERE ((positions.col_memberID = memberID) AND (r_perlab.key_member = positions.col_memberID) AND (r_perlab.start = startrattachement));
+	SELECT * INTO lastJob FROM lire_lastJob(memberID) AS (jobID INT,startsupport DATE,jobEnd DATE);
+	IF lastJob.jobID = jobID THEN
+		SELECT
+			r_perlab.key AS positionHeld,
+			r_perlab.endDate AS positionEnd
+		INTO lastEmployer
+		FROM
+			r_perlab,
+			(SELECT
+				r_perlab.key_member AS col_memberID,
+				max(r_perlab.start) AS startrattachement
+			FROM r_perlab
+			GROUP BY col_memberID) positions
+		WHERE ((positions.col_memberID = memberID) AND (r_perlab.key_member = positions.col_memberID) AND (r_perlab.start = startrattachement));
 
-IF lastEmployer.positionHeld IS NOT NULL THEN
+		IF lastEmployer.positionHeld IS NOT NULL THEN
 			updateJob := true;
-UPDATE r_perlab SET endDate = jobEnd WHERE key = lastEmployer.positionHeld;
-END IF;
-END IF;
+			UPDATE r_perlab SET endDate = jobEnd WHERE key = lastEmployer.positionHeld;
+		END IF;
+	END IF;
 
-RETURN updateJob;
+	RETURN updateJob;
 END;$$;
 
 -- CREATE FUNCTION getArrivalDate(memberID integer, teamID integer, atDate date) RETURNS date
@@ -417,7 +417,7 @@ CREATE FUNCTION cleanString(str character varying) RETURNS character varying
     AS $$
 
 DECLARE
-spechar VARCHAR[ ] := ARRAY['à','â','é','è','ê','ë','ï','î','ô','û','ù','À','Â','É','È','Ê','Ë','Ï','Î','ô','û','ù','ç' ];
+	spechar VARCHAR[ ] := ARRAY['à','â','é','è','ê','ë','ï','î','ô','û','ù','À','Â','É','È','Ê','Ë','Ï','Î','ô','û','ù','ç' ];
 	lettres VARCHAR[ ] := ARRAY['a','a','e','e','e','e','i','i','o','u','u','a','a','e','e','e','e','i','i','o','u','u','c' ];
 	resultat VARCHAR;
 	nbrspechar INTEGER := 23;
@@ -425,11 +425,11 @@ spechar VARCHAR[ ] := ARRAY['à','â','é','è','ê','ë','ï','î','ô','û','�
 BEGIN
 	IF (str IS NOT NULL) THEN
 		resultat := str;
-FOR i IN 1..nbrspechar LOOP
+		FOR i IN 1..nbrspechar LOOP
 			resultat := regexp_replace(resultat,spechar[i],lettres[i],'g');
-END LOOP;
-END IF;
-RETURN resultat;
+		END LOOP;
+	END IF;
+	RETURN resultat;
 END;$$;
 
 CREATE FUNCTION t_update() RETURNS trigger
@@ -438,7 +438,7 @@ CREATE FUNCTION t_update() RETURNS trigger
 
 BEGIN
         NEW.name = upper(cleanString(NEW.name));
-return NEW;
+        return NEW;
 END;$$;
 
 
@@ -446,8 +446,8 @@ CREATE FUNCTION t_create() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-INSERT INTO list(key,date) VALUES(NEW.key,NEW.end);
-RETURN NEW;
+	INSERT INTO list(key,date) VALUES(NEW.key,NEW.end);
+	RETURN NEW;
 END;$$;
 
 CREATE OR REPLACE FUNCTION test.test_parse (
@@ -464,16 +464,16 @@ BEGIN
 
     IF p_time_interval IS NULL
         THEN p_time_interval := interval_from_start_end(p_time_start, p_time_end);
-END IF;
-RETURN QUERY
-SELECT
-    bucket_function(p_time_interval, timestamp) AS ts,
-    arbitrary_return
-FROM test.some_table
-WHERE
-    start >= p_time_start
-  AND "end" < p_time_end
-GROUP BY 1;
+    END IF;
+    RETURN QUERY
+    SELECT
+        bucket_function(p_time_interval, timestamp) AS ts,
+        arbitrary_return
+    FROM test.some_table
+    WHERE
+        start >= p_time_start
+        AND "end" < p_time_end
+    GROUP BY 1;
 END; $$ LANGUAGE plpgsql SECURITY DEFINER PARALLEL UNSAFE;
 
 CREATE FUNCTION public.somefunc(OUT _result uuid[])
@@ -482,7 +482,7 @@ CREATE FUNCTION public.somefunc(OUT _result uuid[])
 
 AS $BODY$
 DECLARE
-active_on_to_date uuid[];
+	active_on_to_date uuid[];
 BEGIN
 _result := ARRAY( SELECT some_id FROM some_table);
 END;
@@ -502,18 +502,18 @@ RETURN v_name || '/' || v_version;
 END; $$ LANGUAGE plpgsql;
 
 CREATE FUNCTION test(str character varying) RETURNS integer
-    LANGUAGE plpgsql
+LANGUAGE plpgsql
 AS $$
 DECLARE
-v3 RECORD;
+  v3 RECORD;
   v4 integer;
 BEGIN
-select 1 as c1, 2 as c2 into v3;
-v3.c1 := 4;
+  select 1 as c1, 2 as c2 into v3;
+  v3.c1 := 4;
 END;$$;
 
 CREATE FUNCTION test_assert() RETURNS integer
-    LANGUAGE plpgsql
+LANGUAGE plpgsql
 AS $$
 BEGIN
   ASSERT true;
@@ -521,35 +521,35 @@ BEGIN
   ASSERT false, 'msg';
   ASSERT false, version();
 
-RETURN 1;
+  RETURN 1;
 END;$$;
 
 -- Example from https://www.postgresql.org/docs/current/sql-do.html
 DO $$DECLARE r record;
 BEGIN
-FOR r IN SELECT table_schema, table_name FROM information_schema.tables
-         WHERE table_type = 'VIEW' AND table_schema = 'public'
-             LOOP
+    FOR r IN SELECT table_schema, table_name FROM information_schema.tables
+             WHERE table_type = 'VIEW' AND table_schema = 'public'
+    LOOP
         EXECUTE 'GRANT ALL ON ' || quote_ident(r.table_schema) || '.' || quote_ident(r.table_name) || ' TO webuser';
-END LOOP;
+    END LOOP;
 END$$;
 
 CREATE FUNCTION test_cursor() RETURNS void AS $$
-DECLARE
-i INT;
+  DECLARE
+    i INT;
     c CURSOR FOR SELECT generate_series(1,10);
-BEGIN
-FOR i IN c LOOP
+  BEGIN
+    FOR i IN c LOOP
       RAISE NOTICE 'i is %',i;
-END LOOP;
-END
+    END LOOP;
+  END
 $$ language plpgsql;
 
 CREATE FUNCTION public.dz_sumfunc(
     IN  p_in  INTEGER
-,OUT p_out public.dz_sumthing
+    ,OUT p_out public.dz_sumthing
 )
-    AS $BODY$
+AS $BODY$
 DECLARE
 BEGIN
     p_out.sumattribute := p_in;
@@ -560,9 +560,9 @@ LANGUAGE plpgsql;
 -- Examples from https://www.postgresql.org/docs/16/plpgsql-declarations.html#PLPGSQL-DECLARATION-PARAMETERS
 CREATE FUNCTION sales_tax(real) RETURNS real AS $$
 DECLARE
-subtotal ALIAS FOR $1;
+    subtotal ALIAS FOR $1;
 BEGIN
-RETURN subtotal * 0.06;
+    RETURN subtotal * 0.06;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -572,24 +572,24 @@ CREATE OR REPLACE FUNCTION public.test_pl(s integer, e integer)
 BEGIN
   id := s;
 LOOP
-EXIT WHEN id>e;
+  EXIT WHEN id>e;
   RETURN NEXT;
   id := id + 1;
 END LOOP;
 END
 $$
-LANGUAGE plpgsql;
+  LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION trgfn()
  RETURNS trigger AS $$
 DECLARE
-prior ALIAS FOR old;
+ prior ALIAS FOR old;
  updated ALIAS FOR new;
 BEGIN
- RETURN;
+  RETURN prior;
 END;
 $$
-LANGUAGE plpgsql;
+  LANGUAGE plpgsql;
 
 -- Example from https://www.postgresql.org/docs/16/plpgsql-cursors.html
 CREATE FUNCTION reffunc2() RETURNS refcursor AS '
@@ -604,9 +604,9 @@ END;
 -- Example from https://www.postgresql.org/docs/16/plpgsql-declarations.html#PLPGSQL-DECLARATION-COLLATION
 CREATE FUNCTION less_than(a text, b text) RETURNS boolean AS $$
 DECLARE
-local_a text COLLATE "en_US" := a;
+    local_a text COLLATE "en_US" := a;
     local_b text := b;
 BEGIN
-RETURN local_a < local_b;
+    RETURN local_a < local_b;
 END;
 $$ LANGUAGE plpgsql;

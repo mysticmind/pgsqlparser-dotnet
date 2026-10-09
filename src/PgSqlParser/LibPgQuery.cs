@@ -94,6 +94,52 @@ internal static class LibPgQuery
         public IntPtr error;
     }
     
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PostgresDeparseComment
+    {
+        public int match_location;
+        public int newlines_before_comment;
+        public int newlines_after_comment;
+        public IntPtr str;
+    }
+
+    // C bool fields are declared as byte to keep the struct blittable.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PostgresDeparseOpts
+    {
+        public IntPtr comments; // PostgresDeparseComment**
+        public UIntPtr comment_count;
+        public byte pretty_print;
+        public int indent_size;
+        public int max_line_length;
+        public byte trailing_newline;
+        public byte commas_start_of_line;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PgQueryDeparseCommentsResult
+    {
+        public IntPtr comments; // PostgresDeparseComment**
+        public UIntPtr comment_count;
+        public IntPtr error;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PgQueryIsUtilityResult
+    {
+        public int length;
+        public IntPtr items; // bool*
+        public IntPtr error;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PgQuerySummaryParseResult
+    {
+        public PgQueryProtobuf summary;
+        public IntPtr stderr_buffer;
+        public IntPtr error;
+    }
+
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern PgQueryNormalizeResult pg_query_normalize([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
     
@@ -122,7 +168,7 @@ internal static class LibPgQuery
     public static extern PgQueryFingerprintResult pg_query_fingerprint([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
  
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryFingerprintResult pg_query_fingerprint_opts([MarshalAs(UnmanagedType.LPUTF8Str)] string input, int parser_options);
+    public static extern PgQueryFingerprintResult pg_query_fingerprint_opts([MarshalAs(UnmanagedType.LPUTF8Str)] string input, int parser_options, int fingerprint_options);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern PgQuerySplitResult pg_query_split_with_scanner([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
@@ -132,7 +178,19 @@ internal static class LibPgQuery
    
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern PgQueryDeparseResult pg_query_deparse_protobuf(PgQueryProtobuf parse_tree);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern PgQueryDeparseResult pg_query_deparse_protobuf_opts(PgQueryProtobuf parse_tree, PostgresDeparseOpts opts);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern PgQueryDeparseCommentsResult pg_query_deparse_comments_for_query([MarshalAs(UnmanagedType.LPUTF8Str)] string query);
    
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern PgQueryIsUtilityResult pg_query_is_utility_stmt([MarshalAs(UnmanagedType.LPUTF8Str)] string query);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern PgQuerySummaryParseResult pg_query_summary([MarshalAs(UnmanagedType.LPUTF8Str)] string input, int parser_options, int truncate_limit);
+
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void pg_query_free_normalize_result(PgQueryNormalizeResult result);
    
@@ -147,6 +205,9 @@ internal static class LibPgQuery
    
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void pg_query_free_deparse_result(PgQueryDeparseResult result);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void pg_query_free_deparse_comments_result(PgQueryDeparseCommentsResult result);
    
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void pg_query_free_protobuf_parse_result(PgQueryProtobufParseResult result);
@@ -158,10 +219,16 @@ internal static class LibPgQuery
     public static extern void pg_query_free_fingerprint_result(PgQueryFingerprintResult result);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void pg_query_free_is_utility_result(PgQueryIsUtilityResult result);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void pg_query_free_summary_parse_result(PgQuerySummaryParseResult result);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void pg_query_exit();
 
-    public const string PgMajorVersion = "17";
-    public const string PgVersion = "17.5";
-    public const int PgVersionNum = 170005;
+    public const string PgMajorVersion = "18";
+    public const string PgVersion = "18.6";
+    public const int PgVersionNum = 180006;
 }
 
