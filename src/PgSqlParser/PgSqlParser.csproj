@@ -44,6 +44,12 @@
       <TargetPath>libpg_query.so</TargetPath>
     </None>
   </ItemGroup>
+  <ItemGroup Condition=" '$(PlatformRID)' == 'linux-arm64' ">
+    <None Include="Native\linux-arm64\$(LibPgQueryDllName).so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>libpg_query.so</TargetPath>
+    </None>
+  </ItemGroup>
   <ItemGroup Condition=" '$(PlatformRID)' == 'win-x64' ">
     <None Include="Native\win-x64\$(LibPgQueryDllName).dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
