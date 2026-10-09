@@ -45,6 +45,27 @@ var walked = Parser.Parse(query).Value!;
 Check("Descendants", walked.Descendants<RangeVar>().Select(table => table.Relname).SequenceEqual(["données"]));
 Check("Unwrap", walked.Stmts[0].Stmt.Unwrap() is SelectStmt);
 Check("GetText", walked.Stmts[1].GetText(query) == "SELECT 2");
+Check("DeparseNode", walked.Stmts[0].Stmt.SelectStmt.WhereClause.Deparse().Value == "id = 1");
+var skipped = 0;
+walked.Walk(visit => { skipped++; return visit.Node is SelectStmt ? WalkAction.SkipChildren : WalkAction.Continue; });
+Check("Walk with a visitor", skipped == 4 && walked.Walk().First().FieldName == "Stmts");
+var tableVisit = walked.Walk().First(visit => visit.Node is RangeVar);
+Check("Ancestors and statement", tableVisit.FindAncestor<SelectStmt>() is not null && tableVisit.StatementIndex == 0);
+Check("ParameterRefs cast type", Parser.ParameterRefs("SELECT $1::int").Value?[0].TypeName == "int");
+var edited = Parser.Parse("SELECT a, b FROM old_name WHERE c = 'x'::text").Value!;
+edited.Rewrite(visit => visit.Node switch
+{
+    RangeVar => NodeEdit.ReplaceWith(new RangeVar { Relname = "new_name", Inh = true, Relpersistence = "p" }),
+    TypeCast cast => NodeEdit.ReplaceWith(cast.Arg),
+    ResTarget when visit.Index == 1 => NodeEdit.Remove,
+    _ => NodeEdit.Keep
+});
+Check("Rewrite", edited.Deparse().Value == "SELECT a FROM new_name WHERE c = 'x'");
+Check("EqualsIgnoringLocations", edited.EqualsIgnoringLocations(Parser.Parse("select a\nfrom new_name where (c = 'x')").Value));
+Check("ParseExpression", Parser.ParseExpression("(a > 0)").Value?.Deparse().Value == "a > 0");
+Check("ParseTypeName", Parser.ParseTypeName("character varying(20)").Value?.Deparse().Value == "varchar(20)");
+Check("PgIdentifier", PgIdentifier.Quote("public", "order") == "public.\"order\"");
+Check("ParameterRefs", Parser.ParameterRefs("SELECT $1, '$2', $3").Value?.Select(p => p.Number).SequenceEqual([1, 3]) == true);
 Check("ParsePlpgsqlFunctions", Parser.ParsePlpgsqlFunctions(
     "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql").Value?[0].Queries().SequenceEqual(["1"]) == true);
 Check("Error", Parser.Parse("SELECT FROM WHERE").Error?.Message?.StartsWith("syntax error") == true);

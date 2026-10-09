@@ -171,6 +171,98 @@ foreach (var stmt in tree.Stmts)
 // drop: DROP TABLE tmp
 ```
 
+Any node can be turned back into SQL on its own, which is how to get the text of a single clause or expression:
+
+```csharp
+var select = tree.Stmts[0].Stmt.SelectStmt;
+
+Console.WriteLine(select.FromClause[0].Deparse().GetValueOrThrow());
+// Output: customers c JOIN orders o ON o.customer_id = c.id
+
+foreach (var table in tree.Descendants<RangeVar>())
+{
+    Console.WriteLine(table.Deparse().GetValueOrThrow());
+}
+// Output: customers c, orders o
+```
+
+`Deparse()` on a node works for statements, expressions, items of a FROM clause, select list and ORDER BY items, WITH clauses and type names. Nodes that are not SQL on their own, such as an `Alias`, return an error.
+
+To control the walk, pass a function. It can skip everything below a node or stop the walk, and each visit tells you which property of its parent the node came from:
+
+```csharp
+// Tables used by the query itself, ignoring subqueries inside expressions
+var tables = new List<string>();
+tree.Walk(visit =>
+{
+    if (visit.Node is SubLink)
+        return WalkAction.SkipChildren;
+
+    if (visit.Node is RangeVar table)
+        tables.Add(table.Relname);
+
+    return WalkAction.Continue;   // or WalkAction.Stop to end the walk
+});
+
+// visit.FieldName is the parent's property, for example nameof(SelectStmt.WhereClause);
+// visit.Index is the position when that property is a list.
+```
+
+Each visit also knows where it sits in the tree, which is what most rules need:
+
+```csharp
+foreach (var visit in tree.Walk())
+{
+    if (visit.Node is not RangeVar table)
+        continue;
+
+    // The nearest containing node of a type, or null
+    var insideCte = visit.FindAncestor<CommonTableExpr>() is not null;
+    var insideSubquery = visit.FindAncestor<SubLink>() is not null;
+
+    // The top-level statement the node belongs to
+    var writes = visit.Statement?.Stmt.Unwrap() is InsertStmt or UpdateStmt or DeleteStmt;
+
+    Console.WriteLine($"statement {visit.StatementIndex}: {table.Relname} (cte: {insideCte}, subquery: {insideSubquery}, writes: {writes})");
+}
+```
+
+`visit.Ancestors` lists every containing node, nearest first.
+
+#### Changing and comparing trees
+
+`Rewrite` walks the tree and lets you keep, replace or remove each node. It changes the tree in place, visiting children before their parents, and the result can be deparsed:
+
+```csharp
+var tree = Parser.Parse("SELECT a, secret FROM old_name WHERE kind = 'x'::text").GetValueOrThrow();
+
+tree.Rewrite(visit => visit.Node switch
+{
+    // Point the query at another table
+    RangeVar { Relname: "old_name" } => NodeEdit.ReplaceWith(new RangeVar { Relname = "new_name", Inh = true, Relpersistence = "p" }),
+    // Drop a cast, keeping what it wraps
+    TypeCast cast => NodeEdit.ReplaceWith(cast.Arg),
+    // Remove an item from a list
+    ResTarget target when target.Deparse().Value == "secret" => NodeEdit.Remove,
+    _ => NodeEdit.Keep
+});
+
+Console.WriteLine(tree.Deparse().GetValueOrThrow());
+// Output: SELECT a FROM new_name WHERE kind = 'x'
+```
+
+`EqualsIgnoringLocations` compares two trees, or two nodes, by structure. Queries that differ only in whitespace, comments, keyword case or redundant parentheses are equal:
+
+```csharp
+var a = Parser.Parse("SELECT a FROM t WHERE x <> 1").GetValueOrThrow();
+var b = Parser.Parse("select a\nfrom t -- note\nwhere (x != 1)").GetValueOrThrow();
+
+Console.WriteLine(a.EqualsIgnoringLocations(b));
+// Output: True
+```
+
+A few helpers go with these: `Parser.ParseExpression` and `Parser.ParseTypeName` parse a single expression or type name on its own, `node.AsNode()` wraps a node for a property or list that takes any node, and `PgIdentifier.Quote` quotes a name the way PostgreSQL's `quote_ident` does.
+
 `Walk` and `Descendants` visit parents before their children and siblings in field order, which is not always the order of the query text. `GetLocation()` returns a node's location if it has one; see [Offsets and non-ASCII text](#offsets-and-non-ascii-text) for its unit. Only statements record a length, so `GetText` is available for statements and not for other nodes.
 
 ### Scan
@@ -194,6 +286,25 @@ if (result.Error is null)
 // result.Value is a ScanResult object and the serialized JSON output is as below
 // { "version": 180006, "tokens": [ { "end": 6, "token": "SELECT", "keywordKind": "RESERVED_KEYWORD" }, { "start": 7, "end": 8, "token": "ICONST" } ] }
 ```
+
+### ParameterRefs
+
+Find the parameter references (`$1`, `$2`, ...) in a query, with where each one is in the query string. References inside string literals and comments are not parameters and are left out.
+
+```csharp
+using PgSqlParser;
+
+var query = "SELECT * FROM t WHERE a = $1 AND b = $2 AND note <> '$3'";
+var parameters = Parser.ParameterRefs(query).GetValueOrThrow();
+
+foreach (var parameter in parameters)
+{
+    Console.WriteLine($"${parameter.Number} at {parameter.Start}..{parameter.End}");
+}
+// Output: $1 at 26..28, $2 at 37..39
+```
+
+When a parameter is cast in the query, `TypeName` holds the type: `$1::int` gives `int`, and `CAST($2 AS numeric(10,2))` gives `numeric(10, 2)`. It is null for a parameter that is not cast.
 
 ### ParsePlpgsql
 
@@ -465,6 +576,20 @@ Two kinds of invalid input are caught before the query reaches libpg_query:
 Deeply nested queries, such as a long chain of operators without parentheses (`a || b || c ...`) or many nested subqueries, are read on a dedicated thread with a large enough stack, so they cannot overflow the stack of the calling thread. A parse tree nested more than 4000 levels deep is rejected with an `Error`. The PostgreSQL parser has its own limit, which depends on the stack available to the calling thread and reports `stack depth limit exceeded`.
 
 Protobuf's own recursive operations on a parse tree, such as `ToString()`, `Clone()` and `Equals()`, run on your thread. On a very deeply nested tree they can still overflow a small stack.
+
+## What's new in 2.1
+
+All additions; nothing from 2.0 changes.
+
+- **Deparse a single node**: `node.Deparse()` turns one clause, expression or table reference back into SQL.
+- **More control when walking**: skip a subtree or stop, and each visit knows its ancestors, the property it came from and its top-level statement.
+- **Change trees**: `Rewrite` keeps, replaces or removes nodes in place.
+- **Compare trees**: `EqualsIgnoringLocations` treats queries that differ only in formatting as equal.
+- **Parse fragments**: `ParseExpression` and `ParseTypeName`.
+- **Parameters**: `ParameterRefs` finds each `$n`, where it is, and the type it is cast to.
+- **Identifier quoting**: `PgIdentifier.Quote`, following PostgreSQL's `quote_ident`.
+
+See [Navigating the parse tree](#navigating-the-parse-tree) and [ParameterRefs](#parameterrefs).
 
 ## What's new in 2.0
 

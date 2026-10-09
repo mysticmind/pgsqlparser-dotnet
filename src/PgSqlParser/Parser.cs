@@ -180,6 +180,21 @@ public enum ParserOptions
 public record DeparseComment(int MatchLocation, int NewlinesBeforeComment, int NewlinesAfterComment, string Text);
 
 /// <summary>
+/// A parameter reference such as <c>$1</c>, found by <see cref="Parser.ParameterRefs"/>.
+/// </summary>
+/// <param name="Number">The parameter number: 1 for <c>$1</c>.</param>
+/// <param name="Start">Where the reference starts in the query string, as a UTF-16 offset.</param>
+/// <param name="End">Where it ends (exclusive), so <c>query[Start..End]</c> is the reference.</param>
+public record ParameterRef(int Number, int Start, int End)
+{
+    /// <summary>
+    /// The type the parameter is cast to in the query, as in <c>$1::int</c> or <c>CAST($1 AS int)</c>,
+    /// or null if it is not cast or the query does not parse.
+    /// </summary>
+    public string? TypeName { get; init; }
+}
+
+/// <summary>
 /// Options for <see cref="Parser.Deparse(ParseResult, DeparseOptions)"/>.
 /// </summary>
 public class DeparseOptions
@@ -400,6 +415,66 @@ public static class Parser
         return RunAsync(() => Parse(query, parserOptions), cancellationToken);
     }
     
+    /// <summary>
+    /// Parse a single expression on its own, such as a column default, a CHECK condition or what
+    /// <c>pg_get_expr</c> returns. Anything that is not exactly one expression is an error. Locations
+    /// in the returned node are not relative to <paramref name="expression"/>.
+    /// </summary>
+    /// <param name="expression"></param>
+    /// <returns></returns>
+    public static Result<Node> ParseExpression(string expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+
+        // In a WHERE clause there is room for exactly one expression, with no alias and no list.
+        // The line break lets the expression end in a line comment.
+        var parsed = Parse($"SELECT WHERE {expression}\n");
+        if (!parsed.TryGetValue(out var tree, out var error))
+            return Result<Node>.Failure(error);
+
+        if (tree.Stmts.Count == 1
+            && tree.Stmts[0].Stmt?.SelectStmt is { WhereClause: { } value } select
+            && select.Equals(new SelectStmt { WhereClause = value, LimitOption = select.LimitOption, Op = SetOperation.SetopNone }))
+        {
+            return Result<Node>.Success(value);
+        }
+
+        return Result<Node>.Failure(NodeError("not a single expression"));
+    }
+
+    /// <summary>
+    /// Parse a type name on its own, such as <c>numeric(10,2)</c>, <c>text[]</c> or <c>public.my_type</c>.
+    /// </summary>
+    /// <param name="typeName"></param>
+    /// <returns></returns>
+    public static Result<TypeName> ParseTypeName(string typeName)
+    {
+        ArgumentNullException.ThrowIfNull(typeName);
+
+        var parsed = Parse($"SELECT NULL::{typeName}");
+        if (!parsed.TryGetValue(out var tree, out var error))
+            return Result<TypeName>.Failure(error);
+
+        if (tree.Stmts.Count == 1
+            && tree.Stmts[0].Stmt?.SelectStmt is { TargetList.Count: 1 } select
+            && select.TargetList[0].ResTarget is { Name: "" } target
+            && target.Val?.TypeCast is { TypeName: { } type, Arg.AConst.Isnull: true }
+            && IsBareSelect(select))
+        {
+            return Result<TypeName>.Success(type);
+        }
+
+        return Result<TypeName>.Failure(NodeError("not a single type name"));
+    }
+
+    // True if the SELECT has a select list and nothing else.
+    private static bool IsBareSelect(SelectStmt select)
+    {
+        var bare = new SelectStmt { LimitOption = select.LimitOption, Op = select.Op };
+        bare.TargetList.Add(select.TargetList);
+        return bare.Equals(select);
+    }
+
     /// <summary>
     /// Parse PL/pgSQL function bodies and returns a JSON representation
     /// </summary>
@@ -826,6 +901,167 @@ public static class Parser
             FreeDeparseComments(comments, commentCount);
             Marshal.FreeHGlobal(parseTree.data);
         }
+    }
+
+    /// <summary>
+    /// Deparse a single node of a parse tree back into SQL, for example only a WHERE clause, one
+    /// expression or one table reference. Supported are statements, expressions, items of a FROM
+    /// clause (<see cref="RangeVar"/>, <see cref="JoinExpr"/>, subselects, functions), select list
+    /// items (<see cref="ResTarget"/>), ORDER BY items (<see cref="SortBy"/>), WITH clauses and their
+    /// common table expressions, and type names. Other nodes, such as a bare <see cref="String"/> or
+    /// <see cref="Alias"/>, return an error. The node is not modified.
+    /// </summary>
+    /// <param name="node">A node of a parse tree, a <see cref="Node"/> wrapper, a <see cref="RawStmt"/> or a whole <see cref="ParseResult"/>.</param>
+    /// <returns></returns>
+    public static Result<string> DeparseNode(IMessage node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        if (node is Node wrapper)
+        {
+            return wrapper.Unwrap() is { } inner
+                ? DeparseNode(inner)
+                : Result<string>.Failure(NodeError("an empty Node cannot be deparsed"));
+        }
+
+        switch (node)
+        {
+            case ParseResult parseResult:
+                return Deparse(parseResult);
+            case RawStmt rawStmt:
+                return Deparse(new ParseResult { Version = PgVersionNum, Stmts = { rawStmt } });
+        }
+
+        if (!ParseTreeExtensions.NodeFields.Value.ContainsKey(node.Descriptor.FullName))
+            return Result<string>.Failure(NodeError($"a {node.Descriptor.Name} cannot be deparsed on its own"));
+
+        var wrapped = node.AsNode();
+
+        if (node.Descriptor.Name.EndsWith("Stmt", StringComparison.Ordinal))
+            return Deparse(new ParseResult { Version = PgVersionNum, Stmts = { new RawStmt { Stmt = wrapped } } });
+
+        // Anything else is deparsed inside a minimal SELECT, and the SELECT around it is cut off again.
+        var select = new SelectStmt { LimitOption = LimitOption.Default, Op = SetOperation.SetopNone };
+        string prefix;
+        var suffix = "";
+        switch (node)
+        {
+            case WithClause withClause:
+                select.WithClause = withClause;
+                prefix = "";
+                suffix = " SELECT";
+                break;
+            case CommonTableExpr:
+                select.WithClause = new WithClause { Ctes = { wrapped } };
+                prefix = "WITH ";
+                suffix = " SELECT";
+                break;
+            case TypeName typeName:
+                select.WhereClause = new Node
+                {
+                    TypeCast = new TypeCast { Arg = new Node { AConst = new A_Const { Isnull = true } }, TypeName = typeName }
+                };
+                prefix = "SELECT WHERE NULL::";
+                break;
+            case RangeVar or JoinExpr or RangeSubselect or RangeFunction or RangeTableSample or RangeTableFunc:
+                select.FromClause.Add(wrapped);
+                prefix = "SELECT FROM ";
+                break;
+            case ResTarget:
+                select.TargetList.Add(wrapped);
+                prefix = "SELECT ";
+                break;
+            case SortBy:
+                select.SortClause.Add(wrapped);
+                prefix = "SELECT ORDER BY ";
+                break;
+            default:
+                select.WhereClause = wrapped;
+                prefix = "SELECT WHERE ";
+                break;
+        }
+
+        var result = Deparse(new ParseResult
+        {
+            Version = PgVersionNum,
+            Stmts = { new RawStmt { Stmt = new Node { SelectStmt = select } } }
+        });
+        // A node that fits none of these positions makes the deparser fail or give something else.
+        if (!result.TryGetValue(out var sql)
+            || !sql.StartsWith(prefix, StringComparison.Ordinal)
+            || !sql.EndsWith(suffix, StringComparison.Ordinal))
+        {
+            return Result<string>.Failure(NodeError($"a {node.Descriptor.Name} cannot be deparsed on its own"));
+        }
+
+        return Result<string>.Success(sql[prefix.Length..^suffix.Length]);
+    }
+
+    private static Error NodeError(string message) => new(message, null, null, 0, 0, null);
+
+    /// <summary>
+    /// Find the parameter references (<c>$1</c>, <c>$2</c>, ...) in a query, in the order they appear.
+    /// A reference inside a string literal or a comment is not a parameter and is not returned.
+    /// When a parameter is cast, as in <c>$1::int</c>, its <see cref="ParameterRef.TypeName"/> is set.
+    /// </summary>
+    /// <param name="query"></param>
+    /// <returns></returns>
+    public static Result<IReadOnlyList<ParameterRef>> ParameterRefs(string query)
+    {
+        var scan = Scan(query);
+        if (!scan.TryGetValue(out var scanResult, out var error))
+            return Result<IReadOnlyList<ParameterRef>>.Failure(error);
+
+        var parameters = new List<ParameterRef>();
+        foreach (var token in scanResult.Tokens)
+        {
+            // A PARAM token is a dollar sign followed by digits.
+            if (token.Token == Token.Param
+                && int.TryParse(query.AsSpan(token.Start + 1, token.End - token.Start - 1), out var number))
+            {
+                parameters.Add(new ParameterRef(number, token.Start, token.End));
+            }
+        }
+
+        return Result<IReadOnlyList<ParameterRef>>.Success(WithCastTypes(query, parameters));
+    }
+
+    // The cast type needs the parse tree. A query that scans but does not parse keeps its parameters,
+    // only without types.
+    private static IReadOnlyList<ParameterRef> WithCastTypes(string query, List<ParameterRef> parameters)
+    {
+        if (parameters.Count == 0 || !Parse(query).TryGetValue(out var tree))
+            return parameters;
+
+        // Tree locations are UTF-8 byte offsets, the parameters' Start is a string offset.
+        var mapper = new Utf8OffsetMapper(query);
+        var typeByStart = new Dictionary<int, string>();
+        foreach (var cast in tree.Descendants<TypeCast>())
+        {
+            if (cast.Arg?.Unwrap() is ParamRef { Location: >= 0 } parameter
+                && cast.TypeName is not null
+                && mapper.TryToCharOffset(parameter.Location, out var start)
+                && DeparseNode(cast.TypeName).TryGetValue(out var typeName))
+            {
+                typeByStart[start] = typeName;
+            }
+        }
+
+        return typeByStart.Count == 0
+            ? parameters
+            : parameters.Select(p => typeByStart.TryGetValue(p.Start, out var type) ? p with { TypeName = type } : p).ToList();
+    }
+
+    /// <summary>
+    /// Async find the parameter references in a query
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public static Task<Result<IReadOnlyList<ParameterRef>>> ParameterRefsAsync(string query,
+        CancellationToken cancellationToken = default)
+    {
+        return RunAsync(() => ParameterRefs(query), cancellationToken);
     }
 
     /// <summary>
