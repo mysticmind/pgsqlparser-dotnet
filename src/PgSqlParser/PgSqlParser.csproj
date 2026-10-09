@@ -86,6 +86,12 @@
       <TargetPath>libpg_query.dll</TargetPath>
     </None>
   </ItemGroup>
+  <ItemGroup Condition=" '$(PlatformRID)' == 'win-arm64' ">
+    <None Include="Native\win-arm64\$(LibPgQueryDllName).dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>libpg_query.dll</TargetPath>
+    </None>
+  </ItemGroup>
   <ItemGroup Condition=" '$(PlatformRID)' == 'osx-arm64' ">
     <None Include="Native\osx-arm64\$(LibPgQueryDllName).dylib">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
