@@ -36,6 +36,10 @@ Check("IsUtilityStmt", Parser.IsUtilityStmt("SHOW fsync").Value is [true]);
 Check("Summary", Parser.Summary(query).Value?.Tables.Count == 1);
 Check("ParsePlpgsql", Parser.ParsePlpgsql(
     "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql").Value?.Contains("PLpgSQL_function") == true);
+// Protobuf's JSON support is reflection-based, which is the part most at risk under Native AOT.
+var tree = Parser.Parse("SELECT 1").Value!;
+Check("ParseResult to JSON", tree.ToString().Contains("\"SelectStmt\""));
+Check("ParseResult from JSON", Parser.Deparse(ParseResult.Parser.ParseJson(tree.ToString())).Value == "SELECT 1");
 Check("Error", Parser.Parse("SELECT FROM WHERE").Error?.Message?.StartsWith("syntax error") == true);
 
 return failed ? 1 : 0;

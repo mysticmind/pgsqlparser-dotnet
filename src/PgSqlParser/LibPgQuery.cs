@@ -1,8 +1,11 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace PgSqlParser;
 
-internal static class LibPgQuery
+// Source-generated P/Invoke (LibraryImport), so the bindings work with trimming and Native AOT.
+// Every struct here is blittable and is passed to and returned from libpg_query by value.
+internal static partial class LibPgQuery
 {
     private const string DllName = "libpg_query";
 
@@ -140,92 +143,121 @@ internal static class LibPgQuery
         public IntPtr error;
     }
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryNormalizeResult pg_query_normalize([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryNormalizeResult pg_query_normalize(string input);
     
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryNormalizeResult pg_query_normalize_utility([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryNormalizeResult pg_query_normalize_utility(string input);
     
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryScanResult pg_query_scan([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryScanResult pg_query_scan(string input);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryParseResult pg_query_parse([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryParseResult pg_query_parse(string input);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryParseResult pg_query_parse_opts([MarshalAs(UnmanagedType.LPUTF8Str)] string input, int parser_options);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryParseResult pg_query_parse_opts(string input, int parser_options);
    
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryProtobufParseResult pg_query_parse_protobuf([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryProtobufParseResult pg_query_parse_protobuf(string input);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryProtobufParseResult pg_query_parse_protobuf_opts([MarshalAs(UnmanagedType.LPUTF8Str)] string input, int parser_options);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryProtobufParseResult pg_query_parse_protobuf_opts(string input, int parser_options);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryPlpgsqlParseResult pg_query_parse_plpgsql([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryPlpgsqlParseResult pg_query_parse_plpgsql(string input);
   
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryFingerprintResult pg_query_fingerprint([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryFingerprintResult pg_query_fingerprint(string input);
  
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryFingerprintResult pg_query_fingerprint_opts([MarshalAs(UnmanagedType.LPUTF8Str)] string input, int parser_options, int fingerprint_options);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryFingerprintResult pg_query_fingerprint_opts(string input, int parser_options, int fingerprint_options);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQuerySplitResult pg_query_split_with_scanner([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQuerySplitResult pg_query_split_with_scanner(string input);
    
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQuerySplitResult pg_query_split_with_parser([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQuerySplitResult pg_query_split_with_parser(string input);
    
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryDeparseResult pg_query_deparse_protobuf(PgQueryProtobuf parse_tree);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryDeparseResult pg_query_deparse_protobuf(PgQueryProtobuf parse_tree);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryDeparseResult pg_query_deparse_protobuf_opts(PgQueryProtobuf parse_tree, PostgresDeparseOpts opts);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryDeparseResult pg_query_deparse_protobuf_opts(PgQueryProtobuf parse_tree, PostgresDeparseOpts opts);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryDeparseCommentsResult pg_query_deparse_comments_for_query([MarshalAs(UnmanagedType.LPUTF8Str)] string query);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryDeparseCommentsResult pg_query_deparse_comments_for_query(string query);
    
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryIsUtilityResult pg_query_is_utility_stmt([MarshalAs(UnmanagedType.LPUTF8Str)] string query);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQueryIsUtilityResult pg_query_is_utility_stmt(string query);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQuerySummaryParseResult pg_query_summary([MarshalAs(UnmanagedType.LPUTF8Str)] string input, int parser_options, int truncate_limit);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial PgQuerySummaryParseResult pg_query_summary(string input, int parser_options, int truncate_limit);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void pg_query_free_normalize_result(PgQueryNormalizeResult result);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void pg_query_free_normalize_result(PgQueryNormalizeResult result);
    
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void pg_query_free_scan_result(PgQueryScanResult result);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void pg_query_free_scan_result(PgQueryScanResult result);
    
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void pg_query_free_parse_result(PgQueryParseResult result);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void pg_query_free_parse_result(PgQueryParseResult result);
    
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void pg_query_free_split_result(PgQuerySplitResult result);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void pg_query_free_split_result(PgQuerySplitResult result);
    
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void pg_query_free_deparse_result(PgQueryDeparseResult result);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void pg_query_free_deparse_result(PgQueryDeparseResult result);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void pg_query_free_deparse_comments_result(PgQueryDeparseCommentsResult result);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void pg_query_free_deparse_comments_result(PgQueryDeparseCommentsResult result);
    
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void pg_query_free_protobuf_parse_result(PgQueryProtobufParseResult result);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void pg_query_free_protobuf_parse_result(PgQueryProtobufParseResult result);
    
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void pg_query_free_plpgsql_parse_result(PgQueryPlpgsqlParseResult result);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void pg_query_free_plpgsql_parse_result(PgQueryPlpgsqlParseResult result);
    
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void pg_query_free_fingerprint_result(PgQueryFingerprintResult result);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void pg_query_free_fingerprint_result(PgQueryFingerprintResult result);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void pg_query_free_is_utility_result(PgQueryIsUtilityResult result);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void pg_query_free_is_utility_result(PgQueryIsUtilityResult result);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void pg_query_free_summary_parse_result(PgQuerySummaryParseResult result);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void pg_query_free_summary_parse_result(PgQuerySummaryParseResult result);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void pg_query_exit();
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void pg_query_exit();
 
     public const string PgMajorVersion = "18";
     public const string PgVersion = "18.6";
