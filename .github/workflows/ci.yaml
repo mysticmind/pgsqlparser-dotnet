@@ -35,3 +35,31 @@ jobs:
         run: dotnet --list-sdks  
       - name: Run tests
         run: dotnet test src/PgSqlParser.Tests/PgSqlParser.Tests.csproj
+
+  # Alpine uses musl instead of glibc, so it gets its own native library and its own test run.
+  # The tests run through docker because the setup actions do not support Alpine containers.
+  alpine:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+      - name: Run tests on Alpine
+        run: |
+          docker run --rm -v "$PWD":/work -w /work \
+            -e DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+            -e PROTOBUF_PROTOC=/usr/bin/protoc \
+            mcr.microsoft.com/dotnet/sdk:10.0-alpine sh -c '
+              set -e
+              # Grpc.Tools bundles a glibc protoc, so use the Alpine one to compile pg_query.proto.
+              apk add --no-cache bash curl protobuf
+              # The image has the .NET 10 runtime; add 8 and 9 to cover every target framework.
+              curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+              bash /tmp/dotnet-install.sh --runtime dotnet --channel 8.0 --install-dir /usr/share/dotnet
+              bash /tmp/dotnet-install.sh --runtime dotnet --channel 9.0 --install-dir /usr/share/dotnet
+              dotnet --list-runtimes
+              dotnet test src/PgSqlParser.Tests/PgSqlParser.Tests.csproj
+            '

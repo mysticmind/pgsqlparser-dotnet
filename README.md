@@ -12,6 +12,13 @@ dotnet add package pgsqlparser
 
 Note that the libpg_query libs for all OS'es are already packaged with the assembly.
 
+| Platform | Runtime identifiers | Minimum version |
+|---|---|---|
+| Linux (glibc) | `linux-x64`, `linux-arm64` | glibc 2.17 |
+| Linux (musl, for example Alpine) | `linux-musl-x64`, `linux-musl-arm64` | Alpine 3.17 |
+| macOS | `osx-x64`, `osx-arm64` | macOS 10.15 (Intel), macOS 11.0 (Apple silicon) |
+| Windows | `win-x64` | |
+
 This version is built on libpg_query 18.1.0, which uses the PostgreSQL 18.6 parser. It targets .NET 8, .NET 9 and .NET 10.
 
 ## Usage

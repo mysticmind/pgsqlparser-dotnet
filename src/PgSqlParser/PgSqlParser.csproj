@@ -30,6 +30,8 @@
     <!-- Detect OS -->
     <OSName Condition=" '$(OS)' == 'Windows_NT' ">win</OSName>
     <OSName Condition=" '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true' ">osx</OSName>
+    <!-- Alpine and other musl-based Linux need their own native lib; the SDK there reports a linux-musl RID -->
+    <OSName Condition=" '$(OSName)' == '' And $(NETCoreSdkRuntimeIdentifier.StartsWith('linux-musl')) ">linux-musl</OSName>
     <OSName Condition=" '$(OSName)' == '' ">linux</OSName>
     <!-- Detect Architecture -->
     <ArchName>$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)</ArchName>
@@ -46,6 +48,18 @@
   </ItemGroup>
   <ItemGroup Condition=" '$(PlatformRID)' == 'linux-arm64' ">
     <None Include="Native\linux-arm64\$(LibPgQueryDllName).so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>libpg_query.so</TargetPath>
+    </None>
+  </ItemGroup>
+  <ItemGroup Condition=" '$(PlatformRID)' == 'linux-musl-x64' ">
+    <None Include="Native\linux-musl-x64\$(LibPgQueryDllName).so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>libpg_query.so</TargetPath>
+    </None>
+  </ItemGroup>
+  <ItemGroup Condition=" '$(PlatformRID)' == 'linux-musl-arm64' ">
+    <None Include="Native\linux-musl-arm64\$(LibPgQueryDllName).so">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <TargetPath>libpg_query.so</TargetPath>
     </None>
