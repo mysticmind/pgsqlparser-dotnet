@@ -45,6 +45,8 @@ var walked = Parser.Parse(query).Value!;
 Check("Descendants", walked.Descendants<RangeVar>().Select(table => table.Relname).SequenceEqual(["données"]));
 Check("Unwrap", walked.Stmts[0].Stmt.Unwrap() is SelectStmt);
 Check("GetText", walked.Stmts[1].GetText(query) == "SELECT 2");
+Check("ParsePlpgsqlFunctions", Parser.ParsePlpgsqlFunctions(
+    "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql").Value?[0].Queries().SequenceEqual(["1"]) == true);
 Check("Error", Parser.Parse("SELECT FROM WHERE").Error?.Message?.StartsWith("syntax error") == true);
 
 return failed ? 1 : 0;
