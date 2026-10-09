@@ -16,6 +16,8 @@ public class TreeEditingTests
     [InlineData("SELECT * FROM t WHERE a <> 1", "SELECT * FROM t WHERE a != 1")]
     [InlineData("CREATE TABLE t (a varchar(10), b int)", "CREATE TABLE t (a character varying(10), b integer)")]
     [InlineData("SELECT 1; SELECT 2", "SELECT 1;\n\n   SELECT 2;")]
+    [InlineData("SELECT 1 WHERE a IN (1, 2)", "SELECT 1 WHERE a  IN ( 1 ,2 )")]
+    [InlineData("SELECT ARRAY[1, 2], ROW(1, 2)", "SELECT ARRAY[ 1,2 ],  ROW( 1,2 )")]
     public void EqualsIgnoringLocationsForTheSameSql(string left, string right)
     {
         var a = Parse(left);
