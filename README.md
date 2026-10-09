@@ -378,6 +378,10 @@ Two kinds of invalid input are caught before the query reaches libpg_query:
 - A `null` query throws `ArgumentNullException`.
 - A query containing a NUL character (`\0`) returns an `Error` with the message `query contains a NUL character`. PostgreSQL does not allow NUL in queries.
 
+Deeply nested queries, such as a long chain of operators without parentheses (`a || b || c ...`) or many nested subqueries, are read on a dedicated thread with a large enough stack, so they cannot overflow the stack of the calling thread. A parse tree nested more than 4000 levels deep is rejected with an `Error`. The PostgreSQL parser has its own limit, which depends on the stack available to the calling thread and reports `stack depth limit exceeded`.
+
+Protobuf's own recursive operations on a parse tree, such as `ToString()`, `Clone()` and `Equals()`, run on your thread. On a very deeply nested tree they can still overflow a small stack.
+
 ## Upgrading from 1.x
 
 Version 2.0 moves from the PostgreSQL 17 parser to PostgreSQL 18, which changes some results:

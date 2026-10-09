@@ -372,9 +372,14 @@ public static class Parser
 
         try
         {
-            return result.error == IntPtr.Zero 
-                ? Result<ParseResult>.Success(ParseResult.Parser.ParseFrom(ReadProtobuf(result.parse_tree))) 
-                : Result<ParseResult>.Failure(ParseError(result.error));
+            if (result.error != IntPtr.Zero)
+                return Result<ParseResult>.Failure(ParseError(result.error));
+
+            // Read through DeepProtobuf, so a deeply nested tree cannot overflow the stack.
+            var tree = DeepProtobuf.Parse(ParseResult.Parser, ParseResult.Descriptor, ReadProtobuf(result.parse_tree));
+            return tree is null
+                ? Result<ParseResult>.Failure(TooDeepError())
+                : Result<ParseResult>.Success(tree);
         }
         finally
         {
@@ -670,7 +675,11 @@ public static class Parser
     {
         ArgumentNullException.ThrowIfNull(parseResult);
 
-        var updatedBytes = parseResult.ToByteArray();
+        // Written through DeepProtobuf, so a deeply nested tree cannot overflow the stack.
+        var updatedBytes = DeepProtobuf.ToByteArray(parseResult);
+        if (updatedBytes is null)
+            return Result<string>.Failure(TooDeepError());
+
         LibPgQuery.PgQueryProtobuf parseTree;
         parseTree.len = (UIntPtr)updatedBytes.Length;
         parseTree.data = Marshal.AllocHGlobal(updatedBytes.Length);
@@ -919,6 +928,9 @@ public static class Parser
     private static unsafe T ReadStruct<T>(IntPtr ptr) where T : unmanaged => *(T*)ptr;
 
     private static unsafe void WriteStruct<T>(IntPtr ptr, T value) where T : unmanaged => *(T*)ptr = value;
+
+    private static Error TooDeepError() =>
+        new($"parse tree is nested more than {DeepProtobuf.MaxDepth} levels deep", null, null, 0, 0, null);
 
     private static byte[] ReadProtobuf(LibPgQuery.PgQueryProtobuf pbuf)
     {
