@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/mysticmind/pgsqlparser-dotnet/main/assets/icon.png" alt="PgSqlParser icon: an elephant holding a parse tree" width="96" align="right">
+<img src="https://raw.githubusercontent.com/mysticmind/pgsqlparser-dotnet/main/assets/icon.png" alt="PgSqlParser icon: an elephant holding a parse tree" width="96">
 
 # PgSqlParser [![Nuget Package](https://badgen.net/nuget/v/pgsqlparser)](https://www.nuget.org/packages/pgsqlparser/)
 
