@@ -9,6 +9,8 @@ jobs:
       # loads on everything from that baseline up to the latest release:
       # - Linux: built inside a manylinux2014 container (glibc 2.17). The runner's own glibc would
       #   otherwise become the minimum required version.
+      # - Alpine and other musl-based Linux: built inside an Alpine container, since a glibc library
+      #   does not load on musl. 3.17 is the oldest Alpine release that .NET 8 supports.
       # - macOS: the deployment target sets the minimum OS version, independent of the runner.
       # - Windows: the CRT is linked statically, so only KERNEL32 is required.
       matrix:
@@ -21,6 +23,16 @@ jobs:
             artifacts_path: "artifacts/linux-arm64"
             container: quay.io/pypa/manylinux2014_aarch64
             max_glibc: "2.17"
+          - os: ubuntu-22.04
+            artifacts_path: "artifacts/linux-musl-x64"
+            container: alpine:3.17
+            container_prepare: apk add --no-cache build-base
+            musl: true
+          - os: ubuntu-22.04-arm
+            artifacts_path: "artifacts/linux-musl-arm64"
+            container: alpine:3.17
+            container_prepare: apk add --no-cache build-base
+            musl: true
           - os: windows-2022
             artifacts_path: "artifacts/win-x64"
           - os: macos-15-intel
@@ -50,7 +62,7 @@ jobs:
         run: |
           # Strip debug info and unneeded symbols, which otherwise make up most of the file.
           docker run --rm -v "$PWD":/work -w /work/src/libpg_query ${{ matrix.container }} \
-            sh -c "make -f Makefile build_shared -j4 && strip --strip-unneeded libpg_query.so"
+            sh -c "${{ matrix.container_prepare || 'true' }} && make -f Makefile build_shared -j4 && strip --strip-unneeded libpg_query.so"
           cp src/libpg_query/libpg_query.so "src/${{ matrix.artifacts_path }}/libpg_query.so"
         shell: bash
       - name: Build artifacts
@@ -81,6 +93,15 @@ jobs:
           echo "Requires glibc $required (allowed: ${{ matrix.max_glibc }})"
           [ "$(printf '%s\n' "$required" "${{ matrix.max_glibc }}" | sort -V | tail -1)" = "${{ matrix.max_glibc }}" ]
         shell: bash
+      - name: Check musl linkage
+        if: matrix.musl
+        run: |
+          lib="src/${{ matrix.artifacts_path }}/libpg_query.so"
+          needed=$(readelf -d "$lib" | grep NEEDED)
+          echo "$needed"
+          echo "$needed" | grep -q 'libc\.musl-'
+          ! objdump -T "$lib" | grep -q 'GLIBC_'
+        shell: bash
       - name: Check minimum macOS version
         if: matrix.macos_target != ''
         run: |
@@ -92,7 +113,8 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts-${{ matrix.os }}
+          # Several entries share a runner, so the job index keeps the names unique.
+          name: build-artifacts-${{ strategy.job-index }}
           path: src/artifacts
           retention-days: 1
           overwrite: true

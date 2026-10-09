@@ -35,3 +35,75 @@ jobs:
         run: dotnet --list-sdks  
       - name: Run tests
         run: dotnet test src/PgSqlParser.Tests/PgSqlParser.Tests.csproj
+
+  # Alpine uses musl instead of glibc, so it gets its own native library and its own test run.
+  # The tests run through docker because the setup actions do not support Alpine containers.
+  alpine:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+      - name: Run tests on Alpine
+        run: |
+          docker run --rm -v "$PWD":/work -w /work \
+            -e DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+            -e PROTOBUF_PROTOC=/usr/bin/protoc \
+            mcr.microsoft.com/dotnet/sdk:10.0-alpine sh -c '
+              set -e
+              # Grpc.Tools bundles a glibc protoc, so use the Alpine one to compile pg_query.proto.
+              apk add --no-cache bash curl protobuf
+              # The image has the .NET 10 runtime; add 8 and 9 to cover every target framework.
+              curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+              bash /tmp/dotnet-install.sh --runtime dotnet --channel 8.0 --install-dir /usr/share/dotnet
+              bash /tmp/dotnet-install.sh --runtime dotnet --channel 9.0 --install-dir /usr/share/dotnet
+              dotnet --list-runtimes
+              dotnet test src/PgSqlParser.Tests/PgSqlParser.Tests.csproj
+            '
+
+  # The native libraries are built on old OS versions so they load on everything newer. These jobs
+  # run the tests at that old end. The tests are built on the runner, since the SDK that builds them
+  # does not run on systems this old, and then run in the old container on .NET 8.
+  floor:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+        target:
+          # Oldest Alpine release that .NET 8 supports, and what the musl libraries are built on.
+          - name: alpine-3.17
+            image: alpine:3.17
+            rid_os: linux-musl
+            prepare: apk add --no-cache bash curl icu-libs libstdc++ libgcc
+          # glibc 2.26. The glibc libraries need 2.17, but .NET 8 itself needs 2.23 or newer.
+          - name: amazonlinux-2
+            image: amazonlinux:2
+            rid_os: linux
+            prepare: yum install -y -q tar gzip libicu
+    name: floor (${{ matrix.target.name }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+      - name: Install .NET 10.0.x
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build tests for the target
+        run: |
+          case "$(uname -m)" in x86_64) arch=x64 ;; aarch64) arch=arm64 ;; esac
+          dotnet build src/PgSqlParser.Tests/PgSqlParser.Tests.csproj -f net8.0 \
+            -p:PlatformRID=${{ matrix.target.rid_os }}-$arch
+      - name: Run tests in ${{ matrix.target.image }}
+        run: |
+          docker run --rm -v "$PWD":/work -w /work -e DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+            ${{ matrix.target.image }} sh -c '
+              set -e
+              ${{ matrix.target.prepare }}
+              curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+              bash /tmp/dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet
+              /usr/share/dotnet/dotnet test src/PgSqlParser.Tests/bin/Debug/net8.0/PgSqlParser.Tests.dll
+            '
