@@ -274,6 +274,7 @@ public static class Parser
     /// Async tokenize a query
     /// </summary>
     /// <param name="query"></param>
+    /// <param name="cancellationToken"></param>
     /// <returns></returns>
     public static Task<Result<ScanResult>> ScanAsync(string query, CancellationToken cancellationToken = default)
     {
@@ -311,6 +312,7 @@ public static class Parser
     /// </summary>
     /// <param name="query"></param>
     /// <param name="parserOptions"></param>
+    /// <param name="cancellationToken"></param>
     /// <returns></returns>
     public static Task<Result<ParseResult?>> ParseAsync(string query, ParserOptions parserOptions = ParserOptions.Default, CancellationToken cancellationToken = default)
     {
@@ -538,7 +540,6 @@ public static class Parser
     /// Split a SQL script containing multiple statements into an array of clean, standalone SQL statements
     /// using Postgres full parser
     /// </summary>
-    /// <param name="query"></param>
     /// <param name="query"></param>
     /// <returns></returns>
     public static Result<SplitResult> SplitWithParser(string query)

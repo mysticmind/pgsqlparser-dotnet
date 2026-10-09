@@ -10,9 +10,25 @@
     <LangVersion>12.0</LangVersion>
     <PackageProjectUrl>https://github.com/mysticmind/pgsqlparser-dotnet</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/mysticmind/pgsqlparser-dotnet</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <PackageTags>postgres;pg;pgsql;postgresql;postgres-parser;libpg_query;sql-parser;parser;query-parser</PackageTags>
     <AssemblyName>pgsqlparser</AssemblyName>
     <RootNamespace>PgSqlParser</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Ship the XML docs so the API comments show up in IntelliSense -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- The generated protobuf classes have no doc comments -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- Source Link and a symbol package, so consumers can step into the source -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <ContinuousIntegrationBuild Condition=" '$(GITHUB_ACTIONS)' == 'true' ">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
   <ItemGroup>
@@ -85,6 +101,7 @@
 
   <!-- Include all for NuGet packaging -->
   <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     <None Include="Native\**\*.*">
       <Pack>true</Pack>
       <PackagePath>runtimes/%(RecursiveDir)native/%(Filename)%(Extension)</PackagePath>
