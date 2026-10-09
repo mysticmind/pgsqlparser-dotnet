@@ -41,7 +41,7 @@ public class SplitResult
 
 /// <summary>
 /// <see cref="Location"/> and <see cref="Length"/> are UTF-16 code unit offsets into the split query.
-/// Parse tree locations use UTF-8 byte offsets.
+/// Parse tree locations use UTF-8 byte offsets; use <see cref="Utf8OffsetMapper"/> to convert them.
 /// </summary>
 public record SplitStmt(int Location, int Length, string Text);
 
@@ -136,7 +136,7 @@ public static class Parser
     }
 
     /// <summary>
-    /// Tokenize a query
+    /// Tokenize a query. Token <c>Start</c> and <c>End</c> are UTF-16 code unit offsets into <paramref name="query"/>.
     /// </summary>
     /// <param name="query"></param>
     /// <returns></returns>
@@ -152,11 +152,8 @@ public static class Parser
             var offsets = new Utf8OffsetMapper(query);
             foreach (var token in scanResult.Tokens)
             {
-                if (!offsets.TryToCharOffset(token.Start, out var start) || !offsets.TryToCharOffset(token.End, out var end))
-                    return Result<ScanResult>.Failure(OffsetError());
-
-                token.Start = start;
-                token.End = end;
+                token.Start = ToCharOffset(offsets, token.Start);
+                token.End = ToCharOffset(offsets, token.End);
             }
 
             return Result<ScanResult>.Success(scanResult);
@@ -178,7 +175,8 @@ public static class Parser
     }
     
     /// <summary>
-    /// Parse SQL and returns an AST 
+    /// Parse SQL and returns an AST. Locations in the parse tree are UTF-8 byte offsets into
+    /// <paramref name="query"/>; use <see cref="Utf8OffsetMapper"/> to convert them to UTF-16 offsets.
     /// </summary>
     /// <param name="query"></param>
     /// <param name="parserOptions"></param>
@@ -403,13 +401,10 @@ public static class Parser
             var stmtPtrPtr = Marshal.ReadIntPtr(stmts, i * IntPtr.Size);
             var stmt = Marshal.PtrToStructure<LibPgQuery.PgQuerySplitStmt>(stmtPtrPtr);
 
-            var byteEnd = stmt.stmt_location + stmt.stmt_len;
-            if (stmt.stmt_len < 0
-                || !offsets.TryToCharOffset(stmt.stmt_location, out var charStart)
-                || !offsets.TryToCharOffset(byteEnd, out var charEnd))
-            {
-                return Result<SplitResult>.Failure(OffsetError());
-            }
+            var charStart = ToCharOffset(offsets, stmt.stmt_location);
+            var charEnd = ToCharOffset(offsets, stmt.stmt_location + stmt.stmt_len);
+            if (charEnd < charStart)
+                throw new InvalidOperationException($"libpg_query returned negative statement length {stmt.stmt_len}.");
 
             splitResult.Statements.Add(
                 new SplitStmt(charStart, charEnd - charStart, query.Substring(charStart, charEnd - charStart)));
@@ -418,8 +413,17 @@ public static class Parser
         return Result<SplitResult>.Success(splitResult);
     }
 
-    private static Error OffsetError() =>
-        new("libpg_query offset does not map to the query", null, null, 0, 0, null);
+    /// <summary>
+    /// libpg_query only reports offsets on character boundaries of the query it was given, so a failure
+    /// here is a broken invariant rather than a query error.
+    /// </summary>
+    private static int ToCharOffset(Utf8OffsetMapper offsets, int byteOffset)
+    {
+        if (!offsets.TryToCharOffset(byteOffset, out var charOffset))
+            throw new InvalidOperationException($"libpg_query returned UTF-8 byte offset {byteOffset}, which does not map to the query.");
+
+        return charOffset;
+    }
 
     private static byte[] ReadProtobuf(LibPgQuery.PgQueryProtobuf pbuf)
     {
@@ -433,9 +437,9 @@ public static class Parser
     {
         var error = Marshal.PtrToStructure<LibPgQuery.PgQueryError>(errorPtr);
         return new Error(
-            Marshal.PtrToStringUTF8(error.message), 
             Marshal.PtrToStringUTF8(error.message),
             Marshal.PtrToStringUTF8(error.funcname),
+            Marshal.PtrToStringUTF8(error.filename),
             error.lineno,
             error.cursorpos,
             Marshal.PtrToStringUTF8(error.context));

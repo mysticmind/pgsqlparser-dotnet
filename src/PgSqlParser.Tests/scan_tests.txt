@@ -24,3 +24,5 @@ SELECT $identifier
 { "version": 170005, "tokens": [ { "end": 6, "token": "SELECT", "keywordKind": "RESERVED_KEYWORD" }, { "start": 7, "end": 8, "token": "ASCII_36" }, { "start": 8, "end": 18, "token": "IDENT" } ] }
 SELECT 'Coût'
 { "version": 170005, "tokens": [ { "end": 6, "token": "SELECT", "keywordKind": "RESERVED_KEYWORD" }, { "start": 7, "end": 13, "token": "SCONST" } ] }
+SELECT '😀' AS "Coût", 1
+{ "version": 170005, "tokens": [ { "end": 6, "token": "SELECT", "keywordKind": "RESERVED_KEYWORD" }, { "start": 7, "end": 11, "token": "SCONST" }, { "start": 12, "end": 14, "token": "AS", "keywordKind": "RESERVED_KEYWORD" }, { "start": 15, "end": 21, "token": "IDENT" }, { "start": 21, "end": 22, "token": "ASCII_44" }, { "start": 23, "end": 24, "token": "ICONST" } ] }
