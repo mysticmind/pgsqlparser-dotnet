@@ -271,7 +271,19 @@ var mapper = new Utf8OffsetMapper(query);
 var charOffset = mapper.ToCharOffset(node.Location);
 ```
 
-- `Error.CursorPos` is a 1-based position in Unicode code points, as PostgreSQL reports it.
+- `Error.CursorPos` is a 1-based position in Unicode code points, as PostgreSQL reports it. Use `Error.GetCursorCharOffset(query)` to get the matching string offset:
+
+```csharp
+var result = Parser.Parse(query);
+if (result.Error is { } error)
+{
+    var charOffset = error.GetCursorCharOffset(query);
+    if (charOffset >= 0)
+    {
+        Console.WriteLine($"{error.Message}: {query[charOffset..]}");
+    }
+}
+```
 
 ### Parse Errors
 
