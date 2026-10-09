@@ -139,7 +139,7 @@ public class UnicodeTests
         result.TruncatedQuery.ShouldBe(expected);
     }
 
-    [NonWindowsFact]
+    [Fact]
     public void ParsePlpgsql()
     {
         var json = Parser.ParsePlpgsql(

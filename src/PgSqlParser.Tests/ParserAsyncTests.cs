@@ -247,7 +247,7 @@ public class ParserAsyncTests
         result.TruncatedQuery.ShouldContain("...");
     }
     
-    [NonWindowsFact]
+    [Fact]
     public async Task ParsePlpgsql()
     {
         var sql = Utils.ReadFile("plpgsql_samples.sql");

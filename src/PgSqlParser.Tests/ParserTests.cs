@@ -259,7 +259,7 @@ public class ParserTests
         result.TruncatedQuery.ShouldContain("...");
     }
 
-    [NonWindowsFact]
+    [Fact]
     public void ParsePlpgsql()
     {
         var sql = Utils.ReadFile("plpgsql_samples.sql");
