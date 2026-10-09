@@ -451,6 +451,20 @@ Deeply nested queries, such as a long chain of operators without parentheses (`a
 
 Protobuf's own recursive operations on a parse tree, such as `ToString()`, `Clone()` and `Equals()`, run on your thread. On a very deeply nested tree they can still overflow a small stack.
 
+## What's new in 2.0
+
+- **PostgreSQL 18**: built on libpg_query 18.1.0, which uses the PostgreSQL 18.6 parser and includes its security fix for `pg_query_normalize`.
+- **More platforms**: Linux on ARM64, Alpine and other musl-based Linux, and Windows on ARM64. The Linux and macOS libraries are now built against old OS baselines, so they load on older systems too (see the table under [Installation](#installation)).
+- **.NET 10**, alongside .NET 8 and .NET 9, and compatibility with trimming and Native AOT.
+- **New functions**: `IsUtilityStmt`, `Summary`, `DeparseComments` and `ParsePlpgsqlFunctions`.
+- **Deparse options**: pretty printing and keeping comments, through `DeparseOptions`.
+- **Fingerprint options**: `FingerprintOptions`, including a PostgreSQL 17 compatible mode.
+- **Easier results**: `GetValueOrThrow`, `TryGetValue`, `Match` and deconstruction on `Result<T>` (see [Working with results](#working-with-results)).
+- **Parse tree navigation**: `Descendants<T>`, `Walk`, `Unwrap`, `GetLocation` and `GetText` (see [Navigating the parse tree](#navigating-the-parse-tree)).
+- **Correct offsets for non-ASCII text**: `Scan` and split results index the query string directly, with `Utf8OffsetMapper` and `Error.GetCursorCharOffset` for the rest (see [Offsets and non-ASCII text](#offsets-and-non-ascii-text)).
+- **Safer input handling**: a `null` query, a NUL character or a deeply nested query no longer crashes the process or is silently cut short.
+- **Package**: IntelliSense documentation, a symbol package and Source Link are included.
+
 ## Upgrading from 1.x
 
 Version 2.0 moves from the PostgreSQL 17 parser to PostgreSQL 18, which changes some results:
@@ -472,4 +486,4 @@ Copyright (c) 2026, Babu Annamalai <babu.annamalai@gmail.com>
 Refer to [libpg_query license](https://github.com/pganalyze/libpg_query?tab=readme-ov-file#license) for license details on libpg_query.
 
 This project includes code derived from the [PostgreSQL project](http://www.postgresql.org/),
-see LICENSE.POSTGRESQL for details.
+see [LICENSE.POSTGRESQL](LICENSE.POSTGRESQL) for details.
