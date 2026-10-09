@@ -142,6 +142,9 @@ public static class Parser
     /// <returns></returns>
     public static Result<string> Normalize(string query)
     {
+        if (InvalidQuery(query) is { } invalid)
+            return Result<string>.Failure(invalid);
+
         var result = LibPgQuery.pg_query_normalize(query);
 
         try
@@ -176,6 +179,9 @@ public static class Parser
     /// <returns></returns>
     public static Result<string> NormalizeUtility(string query)
     {
+        if (InvalidQuery(query) is { } invalid)
+            return Result<string>.Failure(invalid);
+
         var result = LibPgQuery.pg_query_normalize_utility(query);
 
         try
@@ -209,6 +215,9 @@ public static class Parser
     /// <returns></returns>
     public static Result<ScanResult> Scan(string query)
     {
+        if (InvalidQuery(query) is { } invalid)
+            return Result<ScanResult>.Failure(invalid);
+
         var result = LibPgQuery.pg_query_scan(query);
         try
         {
@@ -250,6 +259,9 @@ public static class Parser
     /// <returns></returns>
     public static Result<ParseResult?> Parse(string query, ParserOptions parserOptions = ParserOptions.Default)
     {
+        if (InvalidQuery(query) is { } invalid)
+            return Result<ParseResult?>.Failure(invalid);
+
         var result = LibPgQuery.pg_query_parse_protobuf_opts(query, (int)parserOptions);
 
         try
@@ -282,6 +294,9 @@ public static class Parser
     /// <returns></returns>
     public static Result<string> ParsePlpgsql(string query)
     {
+        if (InvalidQuery(query) is { } invalid)
+            return Result<string>.Failure(invalid);
+
         var result = LibPgQuery.pg_query_parse_plpgsql(query);
         
         try
@@ -318,6 +333,9 @@ public static class Parser
         ParserOptions parserOptions = ParserOptions.Default,
         FingerprintOptions fingerprintOptions = FingerprintOptions.Default)
     {
+        if (InvalidQuery(query) is { } invalid)
+            return Result<string>.Failure(invalid);
+
         var result = LibPgQuery.pg_query_fingerprint_opts(query, (int)parserOptions, (int)fingerprintOptions);
         try
         {
@@ -369,6 +387,9 @@ public static class Parser
     /// <returns></returns>
     public static Result<bool[]> IsUtilityStmt(string query)
     {
+        if (InvalidQuery(query) is { } invalid)
+            return Result<bool[]>.Failure(invalid);
+
         var result = LibPgQuery.pg_query_is_utility_stmt(query);
         try
         {
@@ -412,6 +433,9 @@ public static class Parser
         ParserOptions parserOptions = ParserOptions.Default,
         int truncateLimit = -1)
     {
+        if (InvalidQuery(query) is { } invalid)
+            return Result<SummaryResult>.Failure(invalid);
+
         var result = LibPgQuery.pg_query_summary(query, (int)parserOptions, truncateLimit);
         try
         {
@@ -449,6 +473,9 @@ public static class Parser
     /// <returns></returns>
     public static Result<SplitResult> SplitWithScanner(string query)
     {
+        if (InvalidQuery(query) is { } invalid)
+            return Result<SplitResult>.Failure(invalid);
+
         var result = LibPgQuery.pg_query_split_with_scanner(query);
 
         try
@@ -486,6 +513,9 @@ public static class Parser
     /// <returns></returns>
     public static Result<SplitResult> SplitWithParser(string query)
     {
+        if (InvalidQuery(query) is { } invalid)
+            return Result<SplitResult>.Failure(invalid);
+
         var result = LibPgQuery.pg_query_split_with_parser(query);
 
         try
@@ -532,6 +562,8 @@ public static class Parser
     /// <returns></returns>
     public static Result<string> Deparse(ParseResult parseResult, DeparseOptions? options)
     {
+        ArgumentNullException.ThrowIfNull(parseResult);
+
         var updatedBytes = parseResult.ToByteArray();
         LibPgQuery.PgQueryProtobuf parseTree;
         parseTree.len = (UIntPtr)updatedBytes.Length;
@@ -617,6 +649,9 @@ public static class Parser
     /// <returns></returns>
     public static Result<IReadOnlyList<DeparseComment>> DeparseComments(string query)
     {
+        if (InvalidQuery(query) is { } invalid)
+            return Result<IReadOnlyList<DeparseComment>>.Failure(invalid);
+
         var result = LibPgQuery.pg_query_deparse_comments_for_query(query);
         try
         {
@@ -660,6 +695,9 @@ public static class Parser
     {
         if (comments.Count == 0)
             return IntPtr.Zero;
+
+        if (comments.Any(c => c?.Text is null || c.Text.Contains('\0')))
+            throw new ArgumentException("Deparse comments must have text without NUL characters.", nameof(comments));
 
         var array = Marshal.AllocHGlobal(comments.Count * IntPtr.Size);
         for (var i = 0; i < comments.Count; i++)
@@ -744,6 +782,30 @@ public static class Parser
             throw new InvalidOperationException($"libpg_query returned UTF-8 byte offset {byteOffset}, which does not map to the query.");
 
         return charOffset;
+    }
+
+    /// <summary>
+    /// libpg_query reads the query as a C string, so a null query would crash the process and a NUL
+    /// character would silently cut the query short. PostgreSQL itself does not allow NUL in queries.
+    /// </summary>
+    private static Error? InvalidQuery(string query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var index = query.IndexOf('\0');
+        if (index < 0)
+            return null;
+
+        // 1-based position in code points, like the cursor positions PostgreSQL reports.
+        // A surrogate pair is one code point, so its second half is not counted.
+        var cursorPos = index + 1;
+        for (var i = 0; i < index; i++)
+        {
+            if (char.IsLowSurrogate(query[i]))
+                cursorPos--;
+        }
+
+        return new Error("query contains a NUL character", null, null, 0, cursorPos, null);
     }
 
     private static byte[] ReadProtobuf(LibPgQuery.PgQueryProtobuf pbuf)
