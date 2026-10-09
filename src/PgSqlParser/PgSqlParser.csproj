@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>.NET wrapper on libpg_query to access PostgreSQL parser outside of the server environment</Description>
+    <Description>PostgreSQL SQL parser for .NET, built on libpg_query, the real PostgreSQL parser. Parse SQL to an AST, deparse and format it, fingerprint and normalize queries, split scripts, tokenize, classify statements, find the tables and columns a query uses, analyse locks, rewrite queries and parse PL/pgSQL. Native libraries included for Linux (glibc and musl), macOS and Windows on x64 and ARM64. Native AOT compatible.</Description>
     <VersionPrefix>2.1.0</VersionPrefix>
     <Authors>Babu Annamalai</Authors>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
@@ -11,9 +11,11 @@
     <PackageProjectUrl>https://github.com/mysticmind/pgsqlparser-dotnet</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
     <RepositoryUrl>https://github.com/mysticmind/pgsqlparser-dotnet</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageTags>postgres;pg;pgsql;postgresql;postgres-parser;libpg_query;sql-parser;parser;query-parser</PackageTags>
+    <PackageTags>postgresql;postgres;pg;pgsql;sql;parser;sql-parser;ast;libpg_query;pg_query;deparse;formatter;sql-formatter;fingerprint;normalize;tokenizer;plpgsql;query-analysis;sql-rewrite;native-aot</PackageTags>
+    <PackageReleaseNotes>See https://github.com/mysticmind/pgsqlparser-dotnet#whats-new-in-21</PackageReleaseNotes>
     <AssemblyName>pgsqlparser</AssemblyName>
     <RootNamespace>PgSqlParser</RootNamespace>
   </PropertyGroup>
@@ -115,6 +117,7 @@
   <!-- Include all for NuGet packaging -->
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\assets\icon.png" Pack="true" PackagePath="\" />
     <None Include="Native\**\*.*">
       <Pack>true</Pack>
       <PackagePath>runtimes/%(RecursiveDir)native/%(Filename)%(Extension)</PackagePath>
