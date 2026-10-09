@@ -185,8 +185,14 @@ jobs:
       # relies on anything Native AOT cannot do, such as runtime marshalling.
       - name: Run package smoke test with Native AOT
         run: |
+          set -o pipefail
           dotnet publish src/PackageSmokeTest -f net10.0 -c Release --use-current-runtime \
-            -p:PublishAot=true -p:PgSqlParserVersion=$PACKAGE_VERSION -o artifacts/aot
+            -p:PublishAot=true -p:PgSqlParserVersion=$PACKAGE_VERSION -o artifacts/aot | tee aot-publish.log
+          # Trim and AOT warnings (IL...) mean something may break at run time, including in dependencies.
+          if grep -q 'warning IL' aot-publish.log; then
+            echo "Native AOT publish reported trim or AOT warnings"
+            exit 1
+          fi
           ./artifacts/aot/PackageSmokeTest
         shell: bash
 
