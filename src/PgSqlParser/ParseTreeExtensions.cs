@@ -444,15 +444,18 @@ public static class ParseTreeExtensions
         return true;
     }
 
-    // Positions in the query text: "location", "stmt_location", "arg_location" and so on, and the
-    // statement length that goes with stmt_location.
+    // Positions in the query text: "location", "stmt_location", "arg_location" and so on, the
+    // statement length that goes with stmt_location, and the start and end of a parenthesized list
+    // ("list_start", "rexpr_list_end").
     private static bool IsLocationField(FieldDescriptor field)
     {
         return field.FieldType == FieldType.Int32
                && !field.IsRepeated
                && (field.Name == LocationFieldName
                    || field.Name.EndsWith("_location", StringComparison.Ordinal)
-                   || field.Name == "stmt_len");
+                   || field.Name == "stmt_len"
+                   || field.Name.EndsWith("list_start", StringComparison.Ordinal)
+                   || field.Name.EndsWith("list_end", StringComparison.Ordinal));
     }
 
     // An explicit stack instead of recursion, so a deeply nested tree cannot overflow the call stack.

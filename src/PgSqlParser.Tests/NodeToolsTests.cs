@@ -162,7 +162,7 @@ public class NodeToolsTests
         });
 
         seen.ShouldBe(tree.Walk().ToList());
-        Should.Throw<ArgumentNullException>(() => tree.Walk(null!));
+        Should.Throw<ArgumentNullException>(() => tree.Walk((Func<NodeVisit, WalkAction>)null!));
         Should.Throw<ArgumentNullException>(() => ((IMessage)null!).Walk(_ => WalkAction.Continue));
     }
 

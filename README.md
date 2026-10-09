@@ -261,6 +261,48 @@ Console.WriteLine(a.EqualsIgnoringLocations(b));
 // Output: True
 ```
 
+#### Building nodes and common changes
+
+`Ast` builds nodes without writing out their fields. Each method gives the same node the parser would for the matching SQL, and `Ast.Expression` parses a piece of SQL when that is easier:
+
+```csharp
+var condition = Ast.And(
+    Ast.Eq(Ast.Column("tenant_id"), Ast.Param(1)),
+    Ast.IsNull(Ast.Column("deleted_at")));
+// The same as Ast.Expression("tenant_id = $1 AND deleted_at IS NULL")
+```
+
+The usual changes to a statement are ready made. They work on the tree, so they hold however the SQL was written:
+
+```csharp
+var tree = Parser.Parse("SELECT id, name FROM customers WHERE active ORDER BY name").GetValueOrThrow();
+
+tree.AddWhere(condition);      // combined with the existing WHERE using AND
+tree.CapLimit(100);            // adds LIMIT 100, or lowers a larger one
+tree.QualifyTables("app");     // gives unqualified tables a schema, leaving CTE names alone
+
+Console.WriteLine(tree.Deparse().GetValueOrThrow());
+// Output: SELECT id, name FROM app.customers WHERE active AND tenant_id = $1 AND deleted_at IS NULL ORDER BY name LIMIT 100
+
+Console.WriteLine(tree.ToCount().Deparse().GetValueOrThrow());
+// Output: SELECT count(*) FROM (SELECT id, name FROM app.customers WHERE active AND tenant_id = $1 AND deleted_at IS NULL ORDER BY name LIMIT 100) q
+```
+
+Also available: `SetLimit`, `SetOffset`, `RenameSchema`, `RenameTable`, and for DDL `ToDropStatement` (the DROP that undoes a CREATE), `EnsureIfNotExists` and `EnsureOrReplace`.
+
+#### Typed visitors
+
+A `NodeVisitor` holds a handler per node type. Several visitors can share one walk, and each skips or stops on its own:
+
+```csharp
+var tables = new List<string>();
+var functions = new List<string>();
+
+tree.Walk(
+    new NodeVisitor().On<RangeVar>((table, visit) => tables.Add(table.Relname)),
+    new NodeVisitor().On<FuncCall>((call, visit) => functions.Add(call.Funcname[^1].String.Sval)));
+```
+
 A few helpers go with these: `Parser.ParseExpression` and `Parser.ParseTypeName` parse a single expression or type name on its own, `node.AsNode()` wraps a node for a property or list that takes any node, and `PgIdentifier.Quote` quotes a name the way PostgreSQL's `quote_ident` does.
 
 `Walk` and `Descendants` visit parents before their children and siblings in field order, which is not always the order of the query text. `GetLocation()` returns a node's location if it has one; see [Offsets and non-ASCII text](#offsets-and-non-ascii-text) for its unit. Only statements record a length, so `GetText` is available for statements and not for other nodes.
@@ -665,28 +707,35 @@ Deeply nested queries, such as a long chain of operators without parentheses (`a
 
 Protobuf's own recursive operations on a parse tree, such as `ToString()`, `Clone()` and `Equals()`, run on your thread. On a very deeply nested tree they can still overflow a small stack.
 
-## What's new in 2.2
-
-All additions; nothing from earlier versions changes.
-
-- **Classify statements**: `Parser.Classify` gives each statement's kind, whether it is read-only, and facts such as a data-modifying CTE, `SELECT INTO`, a locking clause or `EXPLAIN ANALYZE`.
-- **Resolved references**: `GetReferences` returns the tables, functions and columns of a query as nodes, with table roles (read, write, DDL), CTE detection and columns matched to their table.
-- **Format in one call**: `Parser.Format` pretty prints a query or a script and keeps its comments.
-- **Readable errors**: `Error.Format` and `Error.GetLineAndColumn`.
-
 ## What's new in 2.1
 
 All additions; nothing from 2.0 changes.
 
+**Understanding a statement**
+
+- **Classify statements**: `Parser.Classify` gives each statement's kind, whether it is read-only, and facts such as a data-modifying CTE, `SELECT INTO`, a locking clause or `EXPLAIN ANALYZE`.
+- **Resolved references**: `GetReferences` returns the tables, functions and columns of a query as nodes, with table roles (read, write, DDL), CTE detection and columns matched to their table.
+- **Parameters**: `ParameterRefs` finds each `$n`, where it is, and the type it is cast to.
+
+**Working with the tree**
+
 - **Deparse a single node**: `node.Deparse()` turns one clause, expression or table reference back into SQL.
 - **More control when walking**: skip a subtree or stop, and each visit knows its ancestors, the property it came from and its top-level statement.
-- **Change trees**: `Rewrite` keeps, replaces or removes nodes in place.
+- **Typed visitors**: `NodeVisitor` with a handler per node type, and several visitors in one walk.
 - **Compare trees**: `EqualsIgnoringLocations` treats queries that differ only in formatting as equal.
-- **Parse fragments**: `ParseExpression` and `ParseTypeName`.
-- **Parameters**: `ParameterRefs` finds each `$n`, where it is, and the type it is cast to.
-- **Identifier quoting**: `PgIdentifier.Quote`, following PostgreSQL's `quote_ident`.
 
-See [Navigating the parse tree](#navigating-the-parse-tree) and [ParameterRefs](#parameterrefs).
+**Changing a statement**
+
+- **Build nodes**: `Ast.Column`, `Ast.Const`, `Ast.Eq`, `Ast.And`, `Ast.Call`, `Ast.Table`, `Ast.Expression` and more, each giving the same node the parser would.
+- **Rewrite**: `Rewrite` keeps, replaces or removes nodes in place.
+- **Common changes ready made**: `AddWhere`, `SetLimit`, `CapLimit`, `SetOffset`, `ToCount`, `QualifyTables`, `RenameSchema`, `RenameTable`, `ToDropStatement`, `EnsureIfNotExists`, `EnsureOrReplace`.
+
+**Working with text**
+
+- **Format in one call**: `Parser.Format` pretty prints a query or a script and keeps its comments.
+- **Readable errors**: `Error.Format` and `Error.GetLineAndColumn`.
+- **Parse fragments**: `ParseExpression` and `ParseTypeName`.
+- **Identifier quoting**: `PgIdentifier.Quote`, following PostgreSQL's `quote_ident`.
 
 ## What's new in 2.0
 

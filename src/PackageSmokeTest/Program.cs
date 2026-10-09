@@ -72,6 +72,15 @@ Check("GetReferences", refs.Tables.Select(t => t.Role).SequenceEqual([TableRole.
                        && refs.Columns.All(c => c.Table is not null));
 Check("Format", Parser.Format("select a from t -- note\n where x = 1").Value == "SELECT a\nFROM t\nWHERE\n    -- note\n    x = 1");
 Check("Error.Format", Parser.Parse("SELECT FROM WHERE").Error!.Format("SELECT FROM WHERE").EndsWith("            ^"));
+var rewritten = Parser.Parse("SELECT id FROM customers WHERE active").Value!;
+rewritten.AddWhere(Ast.And(Ast.Eq(Ast.Column("tenant_id"), Ast.Param(1)), Ast.IsNull(Ast.Column("deleted_at"))));
+rewritten.CapLimit(100);
+rewritten.QualifyTables("app");
+Check("Ast and rewrites", rewritten.Deparse().Value == "SELECT id FROM app.customers WHERE active AND tenant_id = $1 AND deleted_at IS NULL LIMIT 100");
+Check("ToDropStatement", Parser.Parse("CREATE TABLE s.t (a int)").Value!.ToDropStatement(ifExists: true).Deparse().Value == "DROP TABLE IF EXISTS s.t");
+var visitedTables = 0;
+rewritten.Walk(new NodeVisitor().On<RangeVar>((_, _) => visitedTables++), new NodeVisitor().On<ParamRef>((_, _) => WalkAction.Stop));
+Check("NodeVisitor", visitedTables == 1);
 Check("ParameterRefs", Parser.ParameterRefs("SELECT $1, '$2', $3").Value?.Select(p => p.Number).SequenceEqual([1, 3]) == true);
 Check("ParsePlpgsqlFunctions", Parser.ParsePlpgsqlFunctions(
     "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql").Value?[0].Queries().SequenceEqual(["1"]) == true);
