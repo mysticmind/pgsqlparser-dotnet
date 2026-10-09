@@ -25,6 +25,38 @@ This version is built on libpg_query 18.1.0, which uses the PostgreSQL 18.6 pars
 
 All functions support both sync and async versions.
 
+### Working with results
+
+Every function returns a `Result<T>` that holds either a `Value` or an `Error`. Pick the style that suits your code:
+
+```csharp
+using PgSqlParser;
+
+// Check IsSuccess: the compiler then knows Value (or Error) is not null
+var result = Parser.Parse(query);
+if (result.IsSuccess)
+{
+    Console.WriteLine(result.Value.Stmts.Count);
+}
+else
+{
+    Console.WriteLine(result.Error.Message);
+}
+
+// Throw on failure: PgSqlParserException carries the Error
+var tree = Parser.Parse(query).GetValueOrThrow();
+
+// Try pattern
+if (Parser.Parse(query).TryGetValue(out var parsed, out var error))
+{
+    Console.WriteLine(parsed.Stmts.Count);
+}
+
+// Match and deconstruction
+var text = Parser.Normalize(query).Match(value => value, e => e.Message);
+var (normalized, normalizeError) = Parser.Normalize(query);
+```
+
 ### Normalize
 
 Transform DML query (SELECT, INSERT, UPDATE, DELETE) into a canonical form by replacing literal values (constants) with placeholders ($1, $2)
@@ -355,6 +387,7 @@ Version 2.0 moves from the PostgreSQL 17 parser to PostgreSQL 18, which changes 
 - **Statement locations**: a statement now starts at its first non-whitespace, non-comment character. This affects `SplitWithParser` and `RawStmt.StmtLocation`; for `SELECT 1; SELECT 2` the second statement is at location 10 with length 8, where it was 9 and 9.
 - **Scan and Split offsets**: `Scan` token offsets and `SplitStmt` locations are UTF-16 offsets into the query string. In 1.x they were UTF-8 byte offsets, which differ as soon as the query contains non-ASCII text. Remove any conversion you did yourself.
 - **Errors**: `Error.FuncName` and `Error.FileName` now hold the function and file name. In 1.x `FuncName` held the message and the file name was missing.
+- **`Parse` return type**: `Parse` and `ParseAsync` return `Result<ParseResult>`, where 1.x returned `Result<ParseResult?>`. Code that declared the nullable type explicitly needs updating.
 - **Dependencies**: the minimum `Google.Protobuf` version is 3.36.2.
 
 ## License

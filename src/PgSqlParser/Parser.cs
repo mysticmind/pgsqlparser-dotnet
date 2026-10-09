@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Google.Protobuf;
@@ -41,10 +42,32 @@ public record Error(string? Message, string? FuncName, string? FileName, int Lin
     }
 }
 
+/// <summary>
+/// Thrown by <see cref="Result{T}.GetValueOrThrow"/> when the call failed. <see cref="Error"/> has the details.
+/// </summary>
+public class PgSqlParserException : Exception
+{
+    public PgSqlParserException(Error error) : base(error.Message)
+    {
+        Error = error;
+    }
+
+    public Error Error { get; }
+}
+
+/// <summary>
+/// The outcome of a parser call: either a <see cref="Value"/> or an <see cref="Error"/>.
+/// </summary>
 public readonly struct Result<T>
 {
+    /// <summary>The result of the call. Not null when <see cref="IsSuccess"/> is true.</summary>
     public T? Value { get; }
+
+    /// <summary>Why the call failed. Not null when <see cref="IsSuccess"/> is false.</summary>
     public Error? Error { get; }
+
+    [MemberNotNullWhen(true, nameof(Value))]
+    [MemberNotNullWhen(false, nameof(Error))]
     public bool IsSuccess { get; }
 
     private Result(T value)
@@ -63,6 +86,57 @@ public readonly struct Result<T>
 
     public static Result<T> Success(T value) => new(value);
     public static Result<T> Failure(Error error) => new(error);
+
+    /// <summary>
+    /// Returns the value, or throws a <see cref="PgSqlParserException"/> carrying the error if the call failed.
+    /// </summary>
+    public T GetValueOrThrow()
+    {
+        if (TryGetValue(out var value, out var error))
+            return value;
+
+        throw new PgSqlParserException(error);
+    }
+
+    /// <summary>
+    /// Gets the value if the call succeeded.
+    /// </summary>
+    public bool TryGetValue([MaybeNullWhen(false)] out T value)
+    {
+        return TryGetValue(out value, out _);
+    }
+
+    /// <summary>
+    /// Gets the value if the call succeeded, or the error if it failed.
+    /// </summary>
+    public bool TryGetValue([MaybeNullWhen(false)] out T value, [NotNullWhen(false)] out Error? error)
+    {
+        value = Value;
+        // A default(Result<T>) has neither a value nor an error.
+        error = IsSuccess ? null : Error ?? new Error("The result was not initialized", null, null, 0, 0, null);
+        return IsSuccess;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="onSuccess"/> with the value or <paramref name="onFailure"/> with the error,
+    /// and returns what it returns.
+    /// </summary>
+    public TResult Match<TResult>(Func<T, TResult> onSuccess, Func<Error, TResult> onFailure)
+    {
+        ArgumentNullException.ThrowIfNull(onSuccess);
+        ArgumentNullException.ThrowIfNull(onFailure);
+
+        return TryGetValue(out var value, out var error) ? onSuccess(value) : onFailure(error);
+    }
+
+    /// <summary>
+    /// Supports <c>var (value, error) = result;</c>. Exactly one of the two is not null.
+    /// </summary>
+    public void Deconstruct(out T? value, out Error? error)
+    {
+        value = Value;
+        error = Error;
+    }
 }
 
 public class SplitResult
@@ -289,18 +363,18 @@ public static class Parser
     /// <param name="query"></param>
     /// <param name="parserOptions"></param>
     /// <returns></returns>
-    public static Result<ParseResult?> Parse(string query, ParserOptions parserOptions = ParserOptions.Default)
+    public static Result<ParseResult> Parse(string query, ParserOptions parserOptions = ParserOptions.Default)
     {
         if (InvalidQuery(query) is { } invalid)
-            return Result<ParseResult?>.Failure(invalid);
+            return Result<ParseResult>.Failure(invalid);
 
         var result = LibPgQuery.pg_query_parse_protobuf_opts(query, (int)parserOptions);
 
         try
         {
             return result.error == IntPtr.Zero 
-                ? Result<ParseResult?>.Success(ParseResult.Parser.ParseFrom(ReadProtobuf(result.parse_tree))) 
-                : Result<ParseResult?>.Failure(ParseError(result.error));
+                ? Result<ParseResult>.Success(ParseResult.Parser.ParseFrom(ReadProtobuf(result.parse_tree))) 
+                : Result<ParseResult>.Failure(ParseError(result.error));
         }
         finally
         {
@@ -315,7 +389,7 @@ public static class Parser
     /// <param name="parserOptions"></param>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    public static Task<Result<ParseResult?>> ParseAsync(string query, ParserOptions parserOptions = ParserOptions.Default, CancellationToken cancellationToken = default)
+    public static Task<Result<ParseResult>> ParseAsync(string query, ParserOptions parserOptions = ParserOptions.Default, CancellationToken cancellationToken = default)
     {
         return RunAsync(() => Parse(query, parserOptions), cancellationToken);
     }
