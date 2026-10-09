@@ -8,7 +8,37 @@ namespace PgSqlParser;
 /// <see cref="CursorPos"/> is a 1-based position in Unicode code points, as PostgreSQL reports it.
 /// It is neither a UTF-8 byte offset nor a UTF-16 offset.
 /// </summary>
-public record Error(string? Message, string? FuncName, string? FileName, int LineNo, int CursorPos, string? Context);
+public record Error(string? Message, string? FuncName, string? FileName, int LineNo, int CursorPos, string? Context)
+{
+    /// <summary>
+    /// Converts <see cref="CursorPos"/> into a 0-based UTF-16 offset into <paramref name="query"/>, the
+    /// query the error was reported for, so it can be used with <see cref="string.Substring(int)"/>.
+    /// Returns -1 if the error has no cursor position or the position is outside the query.
+    /// </summary>
+    public int GetCursorCharOffset(string query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        if (CursorPos <= 0)
+            return -1;
+
+        var charOffset = 0;
+        for (var codePoints = CursorPos - 1; codePoints > 0; codePoints--)
+        {
+            if (charOffset >= query.Length)
+                return -1;
+
+            // A surrogate pair is one code point spanning two chars.
+            charOffset += char.IsHighSurrogate(query[charOffset])
+                          && charOffset + 1 < query.Length
+                          && char.IsLowSurrogate(query[charOffset + 1])
+                ? 2
+                : 1;
+        }
+
+        return charOffset;
+    }
+}
 
 public readonly struct Result<T>
 {
