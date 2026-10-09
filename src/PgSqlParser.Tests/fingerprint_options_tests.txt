@@ -1,0 +1,36 @@
+SELECT * FROM orders_2024_01
+0
+0e612f391ad711b8
+SELECT * FROM orders_2024_02
+0
+0e612f391ad711b8
+SELECT * FROM orders_2024_01
+16
+3cc2d1ca3f22c9bf
+SELECT * FROM orders_2024_02
+16
+291f96ac98cf4c38
+SELECT * FROM sales
+0
+4d93c901b91cb364
+SELECT * FROM public.sales
+0
+4d93c901b91cb364
+SELECT * FROM sales s
+0
+93a3bbe18171c380
+SELECT * FROM sales s
+1
+4d93c901b91cb364
+SELECT * FROM public.sales
+2
+78d676e53f612747
+SELECT * FROM public.sales s
+2
+9cf22829ca3b350b
+MERGE into measurement m USING new_measurement nm ON (m.city_id = nm.city_id and m.logdate=nm.logdate) WHEN MATCHED AND nm.peaktemp IS NULL THEN DELETE WHEN MATCHED THEN UPDATE SET peaktemp = greatest(m.peaktemp, nm.peaktemp), unitsales = m.unitsales + coalesce(nm.unitsales, 0) WHEN NOT MATCHED THEN INSERT (city_id, logdate, peaktemp, unitsales) VALUES (city_id, logdate, peaktemp, unitsales)
+3
+fe086f143f4c7ed9
+SELECT * FROM public.orders_2024_01 o
+19
+115077f8a9c3c10d

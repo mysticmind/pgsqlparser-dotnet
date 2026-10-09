@@ -61,6 +61,37 @@ public enum ParserOptions
     DisableEscapeStringWarning = 64
 }
 
+/// <summary>
+/// Flags that control how fingerprints are calculated.
+/// </summary>
+[Flags]
+public enum FingerprintOptions
+{
+    /// <summary>
+    /// Follows Postgres 18+ query ID behavior: in SELECT/DML statements the alias name replaces the
+    /// relation name when present, and schema names are ignored.
+    /// </summary>
+    Default = 0,
+
+    /// <summary>Relation names are always fingerprinted, aliases are ignored.</summary>
+    RangeVarIgnoreAliases = 1 << 0,
+
+    /// <summary>Schema names are also fingerprinted in SELECT/DML statements.</summary>
+    RangeVarIncludeSchema = 1 << 1,
+
+    /// <summary>
+    /// Matches how Postgres 17 and earlier calculate query IDs, and how libpg_query 17 and earlier
+    /// calculated fingerprints.
+    /// </summary>
+    RangeVarPg17Compat = RangeVarIgnoreAliases | RangeVarIncludeSchema,
+
+    /// <summary>
+    /// Fingerprints the full relation name, instead of ignoring sequences of two or more digits
+    /// (which groups queries on date/number-suffixed tables together).
+    /// </summary>
+    FullRelName = 1 << 4
+}
+
 public static class Parser
 {
     public static string PgMajorVersion => LibPgQuery.PgMajorVersion;
@@ -245,11 +276,13 @@ public static class Parser
     /// </summary>
     /// <param name="query"></param>
     /// <param name="parserOptions"></param>
+    /// <param name="fingerprintOptions"></param>
     /// <returns></returns>
     public static Result<string> Fingerprint(string query,
-        ParserOptions parserOptions = ParserOptions.Default)
+        ParserOptions parserOptions = ParserOptions.Default,
+        FingerprintOptions fingerprintOptions = FingerprintOptions.Default)
     {
-        var result = LibPgQuery.pg_query_fingerprint_opts(query, (int)parserOptions);
+        var result = LibPgQuery.pg_query_fingerprint_opts(query, (int)parserOptions, (int)fingerprintOptions);
         try
         {
             return result.error == IntPtr.Zero
@@ -274,6 +307,102 @@ public static class Parser
         CancellationToken cancellationToken = default)
     {
         return RunAsync(() => Fingerprint(query, parserOptions), cancellationToken);
+    }
+
+    /// <summary>
+    /// Async generate a normalized hash (fingerprint) of a SQL statement — ignoring literals, whitespace, and minor variations
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="parserOptions"></param>
+    /// <param name="fingerprintOptions"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public static Task<Result<string>> FingerprintAsync(string query,
+        ParserOptions parserOptions,
+        FingerprintOptions fingerprintOptions,
+        CancellationToken cancellationToken = default)
+    {
+        return RunAsync(() => Fingerprint(query, parserOptions, fingerprintOptions), cancellationToken);
+    }
+
+    /// <summary>
+    /// Check whether each statement in a query is a utility statement (DDL and other commands that are
+    /// not SELECT, INSERT, UPDATE, DELETE or MERGE). Returns one entry per statement.
+    /// </summary>
+    /// <param name="query"></param>
+    /// <returns></returns>
+    public static Result<bool[]> IsUtilityStmt(string query)
+    {
+        var result = LibPgQuery.pg_query_is_utility_stmt(query);
+        try
+        {
+            if (result.error != IntPtr.Zero)
+                return Result<bool[]>.Failure(ParseError(result.error));
+
+            var items = new bool[result.length];
+            for (var i = 0; i < items.Length; i++)
+                items[i] = Marshal.ReadByte(result.items, i) != 0;
+
+            return Result<bool[]>.Success(items);
+        }
+        finally
+        {
+            LibPgQuery.pg_query_free_is_utility_result(result);
+        }
+    }
+
+    /// <summary>
+    /// Async check whether each statement in a query is a utility statement
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public static Task<Result<bool[]>> IsUtilityStmtAsync(string query, CancellationToken cancellationToken = default)
+    {
+        return RunAsync(() => IsUtilityStmt(query), cancellationToken);
+    }
+
+    /// <summary>
+    /// Summarize a query: the tables, aliases, CTE names, functions, filter columns and statement types
+    /// it references, and optionally a truncated version of the query text.
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="parserOptions"></param>
+    /// <param name="truncateLimit">
+    /// Maximum length of <c>TruncatedQuery</c> in the result, or -1 to skip truncation.
+    /// </param>
+    /// <returns></returns>
+    public static Result<SummaryResult> Summary(string query,
+        ParserOptions parserOptions = ParserOptions.Default,
+        int truncateLimit = -1)
+    {
+        var result = LibPgQuery.pg_query_summary(query, (int)parserOptions, truncateLimit);
+        try
+        {
+            return result.error == IntPtr.Zero
+                ? Result<SummaryResult>.Success(SummaryResult.Parser.ParseFrom(ReadProtobuf(result.summary)))
+                : Result<SummaryResult>.Failure(ParseError(result.error));
+        }
+        finally
+        {
+            LibPgQuery.pg_query_free_summary_parse_result(result);
+        }
+    }
+
+    /// <summary>
+    /// Async summarize a query
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="parserOptions"></param>
+    /// <param name="truncateLimit"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public static Task<Result<SummaryResult>> SummaryAsync(string query,
+        ParserOptions parserOptions = ParserOptions.Default,
+        int truncateLimit = -1,
+        CancellationToken cancellationToken = default)
+    {
+        return RunAsync(() => Summary(query, parserOptions, truncateLimit), cancellationToken);
     }
 
     /// <summary>
