@@ -48,8 +48,9 @@ jobs:
       - name: Build artifacts in container
         if: matrix.container != ''
         run: |
+          # Strip debug info and unneeded symbols, which otherwise make up most of the file.
           docker run --rm -v "$PWD":/work -w /work/src/libpg_query ${{ matrix.container }} \
-            make -f Makefile build_shared -j4
+            sh -c "make -f Makefile build_shared -j4 && strip --strip-unneeded libpg_query.so"
           cp src/libpg_query/libpg_query.so "src/${{ matrix.artifacts_path }}/libpg_query.so"
         shell: bash
       - name: Build artifacts
