@@ -26,7 +26,18 @@ jobs:
     steps:
       - name: checkout repo
         uses: actions/checkout@v4
+      # The install occasionally crashes on the windows-11-arm runner, so a failed attempt is retried once.
       - name: Install .NET 8.0.x, 9.0.x and 10.0.x
+        id: install-dotnet
+        continue-on-error: true
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - name: Install .NET 8.0.x, 9.0.x and 10.0.x (retry)
+        if: steps.install-dotnet.outcome == 'failure'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
@@ -141,7 +152,18 @@ jobs:
     steps:
       - name: checkout repo
         uses: actions/checkout@v4
+      # The install occasionally crashes on the windows-11-arm runner, so a failed attempt is retried once.
       - name: Install .NET 8.0.x, 9.0.x and 10.0.x
+        id: install-dotnet
+        continue-on-error: true
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - name: Install .NET 8.0.x, 9.0.x and 10.0.x (retry)
+        if: steps.install-dotnet.outcome == 'failure'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
