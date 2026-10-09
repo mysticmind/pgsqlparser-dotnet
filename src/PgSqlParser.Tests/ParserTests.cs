@@ -122,6 +122,19 @@ public class ParserTests
     }
     
     [Fact]
+    public void ErrorCarriesFuncNameAndFileName()
+    {
+        var result = Parser.Parse("SELECT FROM WHERE");
+
+        result.IsSuccess.ShouldBeFalse();
+        var error = result.Error.ShouldNotBeNull();
+        error.Message.ShouldNotBeNull().ShouldStartWith("syntax error");
+        error.FuncName.ShouldBe("scanner_yyerror");
+        error.FileName.ShouldBe("scan.l");
+        error.CursorPos.ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
     public void Fingerprint()
     {
         var items = Utils.ReadLines("fingerprint_tests.txt").ToArray();
