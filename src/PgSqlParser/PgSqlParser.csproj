@@ -17,7 +17,7 @@
 
   <ItemGroup>
     <PackageReference Include="Google.Protobuf" Version="3.33.0" />
-    <PackageReference Include="Grpc.Tools" Version="2.72.0">
+    <PackageReference Include="Grpc.Tools" Version="2.84.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
@@ -40,6 +40,12 @@
   <!-- Copy only native libs based on computed PlatformRID for dev-->
   <ItemGroup Condition=" '$(PlatformRID)' == 'linux-x64' ">
     <None Include="Native\linux-x64\$(LibPgQueryDllName).so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>libpg_query.so</TargetPath>
+    </None>
+  </ItemGroup>
+  <ItemGroup Condition=" '$(PlatformRID)' == 'linux-arm64' ">
+    <None Include="Native\linux-arm64\$(LibPgQueryDllName).so">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <TargetPath>libpg_query.so</TargetPath>
     </None>

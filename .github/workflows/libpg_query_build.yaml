@@ -9,6 +9,8 @@ jobs:
         include:
           - os: ubuntu-latest
             artifacts_path: "artifacts/linux-x64"
+          - os: ubuntu-24.04-arm
+            artifacts_path: "artifacts/linux-arm64"
           - os: windows-latest
             artifacts_path: "artifacts/win-x64"
           - os: macos-15-intel
