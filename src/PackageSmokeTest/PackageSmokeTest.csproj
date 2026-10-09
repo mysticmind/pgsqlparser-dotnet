@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Deliberately not part of the solution; see Program.cs for what this is and how to run it. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="pgsqlparser" Version="$(PgSqlParserVersion)" />
+  </ItemGroup>
+
+</Project>

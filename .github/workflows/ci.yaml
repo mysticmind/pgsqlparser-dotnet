@@ -11,6 +11,8 @@ on:
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  # Version of the package built for the package smoke tests. It never exists on nuget.org.
+  PACKAGE_VERSION: 0.0.0-ci.${{ github.run_id }}
 
 jobs:
   job:
@@ -107,3 +109,102 @@ jobs:
               bash /tmp/dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet
               /usr/share/dotnet/dotnet test src/PgSqlParser.Tests/bin/Debug/net8.0/PgSqlParser.Tests.dll
             '
+
+  # The jobs above test the project. The jobs below test the NuGet package: they pack it once and
+  # then install it into src/PackageSmokeTest the way a client would, which checks the package
+  # contents and the native library that NuGet and the runtime pick on each platform.
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+      - name: Install .NET 10.0.x
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Pack
+        run: dotnet pack src/PgSqlParser/PgSqlParser.csproj -c Release -o artifacts/package -p:Version=$PACKAGE_VERSION
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: artifacts/package
+          retention-days: 1
+
+  package:
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15-intel, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+      - name: Install .NET 8.0.x, 9.0.x and 10.0.x
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: artifacts/package
+      - name: Run package smoke test
+        run: |
+          for tfm in net8.0 net9.0 net10.0; do
+            dotnet run --project src/PackageSmokeTest -f $tfm -p:PgSqlParserVersion=$PACKAGE_VERSION
+          done
+        shell: bash
+
+  # The same smoke test inside Linux containers: Alpine (musl) on each .NET version, and the oldest
+  # supported Alpine and glibc systems. The app is built on the runner as a portable app, so the
+  # runtime in the container picks the native library, as it does for a client's deployment.
+  package-containers:
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+      - name: Install .NET 10.0.x
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: artifacts/package
+      - name: Build package smoke test
+        run: dotnet build src/PackageSmokeTest -p:PgSqlParserVersion=$PACKAGE_VERSION
+      - name: Run in Alpine on .NET 8, 9 and 10
+        run: |
+          for version in 8.0 9.0 10.0; do
+            docker run --rm -v "$PWD":/work -w /work mcr.microsoft.com/dotnet/runtime:$version-alpine \
+              dotnet src/PackageSmokeTest/bin/Debug/net$version/PackageSmokeTest.dll
+          done
+      - name: Run in Alpine 3.17
+        run: |
+          docker run --rm -v "$PWD":/work -w /work alpine:3.17 sh -c '
+            set -e
+            apk add --no-cache bash curl icu-libs libstdc++ libgcc
+            curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+            bash /tmp/dotnet-install.sh --runtime dotnet --channel 8.0 --install-dir /usr/share/dotnet
+            /usr/share/dotnet/dotnet src/PackageSmokeTest/bin/Debug/net8.0/PackageSmokeTest.dll
+          '
+      - name: Run in Amazon Linux 2
+        run: |
+          docker run --rm -v "$PWD":/work -w /work amazonlinux:2 sh -c '
+            set -e
+            yum install -y -q tar gzip libicu
+            curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+            bash /tmp/dotnet-install.sh --runtime dotnet --channel 8.0 --install-dir /usr/share/dotnet
+            /usr/share/dotnet/dotnet src/PackageSmokeTest/bin/Debug/net8.0/PackageSmokeTest.dll
+          '
