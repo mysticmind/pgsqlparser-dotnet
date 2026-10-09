@@ -180,6 +180,14 @@ public enum ParserOptions
 public record DeparseComment(int MatchLocation, int NewlinesBeforeComment, int NewlinesAfterComment, string Text);
 
 /// <summary>
+/// A parameter reference such as <c>$1</c>, found by <see cref="Parser.ParameterRefs"/>.
+/// </summary>
+/// <param name="Number">The parameter number: 1 for <c>$1</c>.</param>
+/// <param name="Start">Where the reference starts in the query string, as a UTF-16 offset.</param>
+/// <param name="End">Where it ends (exclusive), so <c>query[Start..End]</c> is the reference.</param>
+public record ParameterRef(int Number, int Start, int End);
+
+/// <summary>
 /// Options for <see cref="Parser.Deparse(ParseResult, DeparseOptions)"/>.
 /// </summary>
 public class DeparseOptions
@@ -826,6 +834,147 @@ public static class Parser
             FreeDeparseComments(comments, commentCount);
             Marshal.FreeHGlobal(parseTree.data);
         }
+    }
+
+    /// <summary>
+    /// Deparse a single node of a parse tree back into SQL, for example only a WHERE clause, one
+    /// expression or one table reference. Supported are statements, expressions, items of a FROM
+    /// clause (<see cref="RangeVar"/>, <see cref="JoinExpr"/>, subselects, functions), select list
+    /// items (<see cref="ResTarget"/>), ORDER BY items (<see cref="SortBy"/>), WITH clauses and their
+    /// common table expressions, and type names. Other nodes, such as a bare <see cref="String"/> or
+    /// <see cref="Alias"/>, return an error. The node is not modified.
+    /// </summary>
+    /// <param name="node">A node of a parse tree, a <see cref="Node"/> wrapper, a <see cref="RawStmt"/> or a whole <see cref="ParseResult"/>.</param>
+    /// <returns></returns>
+    public static Result<string> DeparseNode(IMessage node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        if (node is Node wrapper)
+        {
+            return wrapper.Unwrap() is { } inner
+                ? DeparseNode(inner)
+                : Result<string>.Failure(NodeError("an empty Node cannot be deparsed"));
+        }
+
+        switch (node)
+        {
+            case ParseResult parseResult:
+                return Deparse(parseResult);
+            case RawStmt rawStmt:
+                return Deparse(new ParseResult { Version = PgVersionNum, Stmts = { rawStmt } });
+        }
+
+        if (!NodeFields.Value.TryGetValue(node.Descriptor.FullName, out var nodeField))
+            return Result<string>.Failure(NodeError($"a {node.Descriptor.Name} cannot be deparsed on its own"));
+
+        var wrapped = new Node();
+        nodeField.Accessor.SetValue(wrapped, node);
+
+        if (node.Descriptor.Name.EndsWith("Stmt", StringComparison.Ordinal))
+            return Deparse(new ParseResult { Version = PgVersionNum, Stmts = { new RawStmt { Stmt = wrapped } } });
+
+        // Anything else is deparsed inside a minimal SELECT, and the SELECT around it is cut off again.
+        var select = new SelectStmt { LimitOption = LimitOption.Default, Op = SetOperation.SetopNone };
+        string prefix;
+        var suffix = "";
+        switch (node)
+        {
+            case WithClause withClause:
+                select.WithClause = withClause;
+                prefix = "";
+                suffix = " SELECT";
+                break;
+            case CommonTableExpr:
+                select.WithClause = new WithClause { Ctes = { wrapped } };
+                prefix = "WITH ";
+                suffix = " SELECT";
+                break;
+            case TypeName typeName:
+                select.WhereClause = new Node
+                {
+                    TypeCast = new TypeCast { Arg = new Node { AConst = new A_Const { Isnull = true } }, TypeName = typeName }
+                };
+                prefix = "SELECT WHERE NULL::";
+                break;
+            case RangeVar or JoinExpr or RangeSubselect or RangeFunction or RangeTableSample or RangeTableFunc:
+                select.FromClause.Add(wrapped);
+                prefix = "SELECT FROM ";
+                break;
+            case ResTarget:
+                select.TargetList.Add(wrapped);
+                prefix = "SELECT ";
+                break;
+            case SortBy:
+                select.SortClause.Add(wrapped);
+                prefix = "SELECT ORDER BY ";
+                break;
+            default:
+                select.WhereClause = wrapped;
+                prefix = "SELECT WHERE ";
+                break;
+        }
+
+        var result = Deparse(new ParseResult
+        {
+            Version = PgVersionNum,
+            Stmts = { new RawStmt { Stmt = new Node { SelectStmt = select } } }
+        });
+        // A node that fits none of these positions makes the deparser fail or give something else.
+        if (!result.TryGetValue(out var sql)
+            || !sql.StartsWith(prefix, StringComparison.Ordinal)
+            || !sql.EndsWith(suffix, StringComparison.Ordinal))
+        {
+            return Result<string>.Failure(NodeError($"a {node.Descriptor.Name} cannot be deparsed on its own"));
+        }
+
+        return Result<string>.Success(sql[prefix.Length..^suffix.Length]);
+    }
+
+    // The Node field that holds each node type, keyed by the node type's full name.
+    private static readonly Lazy<Dictionary<string, Google.Protobuf.Reflection.FieldDescriptor>> NodeFields = new(() =>
+        Node.Descriptor.Fields.InDeclarationOrder()
+            .Where(field => field.FieldType == Google.Protobuf.Reflection.FieldType.Message)
+            .ToDictionary(field => field.MessageType.FullName));
+
+    private static Error NodeError(string message) => new(message, null, null, 0, 0, null);
+
+    /// <summary>
+    /// Find the parameter references (<c>$1</c>, <c>$2</c>, ...) in a query, in the order they appear.
+    /// A reference inside a string literal or a comment is not a parameter and is not returned.
+    /// </summary>
+    /// <param name="query"></param>
+    /// <returns></returns>
+    public static Result<IReadOnlyList<ParameterRef>> ParameterRefs(string query)
+    {
+        var scan = Scan(query);
+        if (!scan.TryGetValue(out var scanResult, out var error))
+            return Result<IReadOnlyList<ParameterRef>>.Failure(error);
+
+        var parameters = new List<ParameterRef>();
+        foreach (var token in scanResult.Tokens)
+        {
+            // A PARAM token is a dollar sign followed by digits.
+            if (token.Token == Token.Param
+                && int.TryParse(query.AsSpan(token.Start + 1, token.End - token.Start - 1), out var number))
+            {
+                parameters.Add(new ParameterRef(number, token.Start, token.End));
+            }
+        }
+
+        return Result<IReadOnlyList<ParameterRef>>.Success(parameters);
+    }
+
+    /// <summary>
+    /// Async find the parameter references in a query
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public static Task<Result<IReadOnlyList<ParameterRef>>> ParameterRefsAsync(string query,
+        CancellationToken cancellationToken = default)
+    {
+        return RunAsync(() => ParameterRefs(query), cancellationToken);
     }
 
     /// <summary>

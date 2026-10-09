@@ -171,6 +171,43 @@ foreach (var stmt in tree.Stmts)
 // drop: DROP TABLE tmp
 ```
 
+Any node can be turned back into SQL on its own, which is how to get the text of a single clause or expression:
+
+```csharp
+var select = tree.Stmts[0].Stmt.SelectStmt;
+
+Console.WriteLine(select.FromClause[0].Deparse().GetValueOrThrow());
+// Output: customers c JOIN orders o ON o.customer_id = c.id
+
+foreach (var table in tree.Descendants<RangeVar>())
+{
+    Console.WriteLine(table.Deparse().GetValueOrThrow());
+}
+// Output: customers c, orders o
+```
+
+`Deparse()` on a node works for statements, expressions, items of a FROM clause, select list and ORDER BY items, WITH clauses and type names. Nodes that are not SQL on their own, such as an `Alias`, return an error.
+
+To control the walk, pass a function. It can skip everything below a node or stop the walk, and each visit tells you which property of its parent the node came from:
+
+```csharp
+// Tables used by the query itself, ignoring subqueries inside expressions
+var tables = new List<string>();
+tree.Walk(visit =>
+{
+    if (visit.Node is SubLink)
+        return WalkAction.SkipChildren;
+
+    if (visit.Node is RangeVar table)
+        tables.Add(table.Relname);
+
+    return WalkAction.Continue;   // or WalkAction.Stop to end the walk
+});
+
+// visit.FieldName is the parent's property, for example nameof(SelectStmt.WhereClause);
+// visit.Index is the position when that property is a list.
+```
+
 `Walk` and `Descendants` visit parents before their children and siblings in field order, which is not always the order of the query text. `GetLocation()` returns a node's location if it has one; see [Offsets and non-ASCII text](#offsets-and-non-ascii-text) for its unit. Only statements record a length, so `GetText` is available for statements and not for other nodes.
 
 ### Scan
@@ -193,6 +230,23 @@ if (result.Error is null)
 
 // result.Value is a ScanResult object and the serialized JSON output is as below
 // { "version": 180006, "tokens": [ { "end": 6, "token": "SELECT", "keywordKind": "RESERVED_KEYWORD" }, { "start": 7, "end": 8, "token": "ICONST" } ] }
+```
+
+### ParameterRefs
+
+Find the parameter references (`$1`, `$2`, ...) in a query, with where each one is in the query string. References inside string literals and comments are not parameters and are left out.
+
+```csharp
+using PgSqlParser;
+
+var query = "SELECT * FROM t WHERE a = $1 AND b = $2 AND note <> '$3'";
+var parameters = Parser.ParameterRefs(query).GetValueOrThrow();
+
+foreach (var parameter in parameters)
+{
+    Console.WriteLine($"${parameter.Number} at {parameter.Start}..{parameter.End}");
+}
+// Output: $1 at 26..28, $2 at 37..39
 ```
 
 ### ParsePlpgsql

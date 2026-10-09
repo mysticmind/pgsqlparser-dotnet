@@ -45,6 +45,11 @@ var walked = Parser.Parse(query).Value!;
 Check("Descendants", walked.Descendants<RangeVar>().Select(table => table.Relname).SequenceEqual(["données"]));
 Check("Unwrap", walked.Stmts[0].Stmt.Unwrap() is SelectStmt);
 Check("GetText", walked.Stmts[1].GetText(query) == "SELECT 2");
+Check("DeparseNode", walked.Stmts[0].Stmt.SelectStmt.WhereClause.Deparse().Value == "id = 1");
+var skipped = 0;
+walked.Walk(visit => { skipped++; return visit.Node is SelectStmt ? WalkAction.SkipChildren : WalkAction.Continue; });
+Check("Walk with a visitor", skipped == 4 && walked.Walk().First().FieldName == "Stmts");
+Check("ParameterRefs", Parser.ParameterRefs("SELECT $1, '$2', $3").Value?.Select(p => p.Number).SequenceEqual([1, 3]) == true);
 Check("ParsePlpgsqlFunctions", Parser.ParsePlpgsqlFunctions(
     "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql").Value?[0].Queries().SequenceEqual(["1"]) == true);
 Check("Error", Parser.Parse("SELECT FROM WHERE").Error?.Message?.StartsWith("syntax error") == true);

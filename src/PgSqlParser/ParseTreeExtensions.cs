@@ -10,7 +10,32 @@ namespace PgSqlParser;
 /// <param name="Node">The node, for example a <see cref="SelectStmt"/> or a <see cref="RangeVar"/>.</param>
 /// <param name="Parent">The node that contains it, or null for a node directly below the root.</param>
 /// <param name="Depth">How far below the root the node is; 1 for the root's own children.</param>
-public readonly record struct NodeVisit(IMessage Node, IMessage? Parent, int Depth);
+public readonly record struct NodeVisit(IMessage Node, IMessage? Parent, int Depth)
+{
+    /// <summary>
+    /// The property of the containing node that holds this node, for example <c>WhereClause</c> or
+    /// <c>TargetList</c>. Compare it with <c>nameof</c>, as in <c>nameof(SelectStmt.WhereClause)</c>.
+    /// </summary>
+    public string? FieldName { get; init; }
+
+    /// <summary>The node's position if that property is a list, otherwise null.</summary>
+    public int? Index { get; init; }
+}
+
+/// <summary>
+/// What <see cref="ParseTreeExtensions.Walk(IMessage, Func{NodeVisit, WalkAction})"/> does after visiting a node.
+/// </summary>
+public enum WalkAction
+{
+    /// <summary>Go on to the node's children.</summary>
+    Continue,
+
+    /// <summary>Do not visit anything below this node, and go on to the next one.</summary>
+    SkipChildren,
+
+    /// <summary>End the walk.</summary>
+    Stop
+}
 
 /// <summary>
 /// Helpers for navigating a parse tree without spelling out the path to each node.
@@ -45,7 +70,32 @@ public static class ParseTreeExtensions
     }
 
     /// <summary>
-    /// Returns every node below <paramref name="root"/>, in the order of <see cref="Walk"/>.
+    /// Walks the nodes below <paramref name="root"/> in the same order, calling <paramref name="visitor"/>
+    /// for each one. Its return value decides whether the walk goes into the node's children, skips
+    /// them, or stops, which the enumerable form cannot do.
+    /// </summary>
+    public static void Walk(this IMessage root, Func<NodeVisit, WalkAction> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(visitor);
+
+        var pending = new Stack<NodeVisit>();
+        PushChildren(pending, root is Node rootWrapper ? rootWrapper.Unwrap() : root, null, 1);
+
+        while (pending.Count > 0)
+        {
+            var visit = pending.Pop();
+            var action = visitor(visit);
+            if (action == WalkAction.Stop)
+                return;
+
+            if (action == WalkAction.Continue)
+                PushChildren(pending, visit.Node, visit.Node, visit.Depth + 1);
+        }
+    }
+
+    /// <summary>
+    /// Returns every node below <paramref name="root"/>, in the order of <see cref="Walk(IMessage)"/>.
     /// </summary>
     public static IEnumerable<IMessage> Descendants(this IMessage root)
     {
@@ -54,7 +104,7 @@ public static class ParseTreeExtensions
 
     /// <summary>
     /// Returns every node of type <typeparamref name="T"/> below <paramref name="root"/>, in the order
-    /// of <see cref="Walk"/>. For example <c>parseResult.Descendants&lt;RangeVar&gt;()</c> finds every
+    /// of <see cref="Walk(IMessage)"/>. For example <c>parseResult.Descendants&lt;RangeVar&gt;()</c> finds every
     /// table reference.
     /// </summary>
     public static IEnumerable<T> Descendants<T>(this IMessage root) where T : class, IMessage
@@ -107,6 +157,14 @@ public static class ParseTreeExtensions
         return query[start..end];
     }
 
+    /// <summary>
+    /// Turns this node back into SQL. See <see cref="Parser.DeparseNode"/> for which nodes are supported.
+    /// </summary>
+    public static Result<string> Deparse(this IMessage node)
+    {
+        return Parser.DeparseNode(node);
+    }
+
     // An explicit stack instead of recursion, so a deeply nested tree cannot overflow the call stack.
     private static IEnumerable<NodeVisit> WalkIterator(IMessage root)
     {
@@ -139,25 +197,21 @@ public static class ParseTreeExtensions
             {
                 var items = (System.Collections.IList)value;
                 for (var j = items.Count - 1; j >= 0; j--)
-                    Push(pending, (IMessage)items[j]!, parent, depth);
+                    Push(pending, (IMessage)items[j]!, parent, depth, field, j);
             }
             else if (value is IMessage child)
             {
-                Push(pending, child, parent, depth);
+                Push(pending, child, parent, depth, field, null);
             }
         }
     }
 
-    private static void Push(Stack<NodeVisit> pending, IMessage child, IMessage? parent, int depth)
+    private static void Push(Stack<NodeVisit> pending, IMessage child, IMessage? parent, int depth,
+        FieldDescriptor field, int? index)
     {
-        if (child is Node wrapper)
-        {
-            if (wrapper.Unwrap() is { } inner)
-                pending.Push(new NodeVisit(inner, parent, depth));
-        }
-        else
-        {
-            pending.Push(new NodeVisit(child, parent, depth));
-        }
+        // A Node wrapper is transparent: the field and index are those of the wrapper.
+        var node = child is Node wrapper ? wrapper.Unwrap() : child;
+        if (node is not null)
+            pending.Push(new NodeVisit(node, parent, depth) { FieldName = field.PropertyName, Index = index });
     }
 }
