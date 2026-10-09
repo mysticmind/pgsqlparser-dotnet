@@ -359,7 +359,7 @@ Version 2.0 moves from the PostgreSQL 17 parser to PostgreSQL 18, which changes 
 
 ## License
 
-Copyright (c) 2025, Babu Annamalai <babu.annamalai@gmail.com>
+Copyright (c) 2026, Babu Annamalai <babu.annamalai@gmail.com>
 
 Refer to [libpg_query license](https://github.com/pganalyze/libpg_query?tab=readme-ov-file#license) for license details on libpg_query.
 
