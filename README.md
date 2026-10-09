@@ -2,9 +2,20 @@
 
 # PgSqlParser [![Nuget Package](https://badgen.net/nuget/v/pgsqlparser)](https://www.nuget.org/packages/pgsqlparser/)
 
-.NET version of [https://github.com/pganalyze/libpg_query](https://github.com/pganalyze/libpg_query). This .NET wrapper on libpg_query C library which uses the actual PostgreSQL server source to parse SQL queries and return the internal PostgreSQL parse tree.
+PostgreSQL SQL parser for .NET, built on [libpg_query](https://github.com/pganalyze/libpg_query), which uses the actual PostgreSQL server source to parse SQL and return the internal PostgreSQL parse tree.
 
-You can find further background to why a query's parse tree is useful here: [https://pganalyze.com/blog/parse-postgresql-queries-in-ruby.html](https://pganalyze.com/blog/pg-query-2-0-postgres-query-parser)
+With it you can:
+
+- parse SQL to an AST, and deparse or format it back to SQL
+- fingerprint and normalize queries, split scripts and tokenize
+- classify statements and find the tables, columns and functions a query uses
+- analyse the locks a statement takes and the columns a query returns
+- rewrite queries and build parse trees in code
+- parse PL/pgSQL
+
+Native libraries are included for Linux (glibc and musl), macOS and Windows on x64 and ARM64, and the package is Native AOT compatible.
+
+For background on why a query's parse tree is useful, see [pg_query 2.0: The easiest way to parse Postgres queries](https://pganalyze.com/blog/pg-query-2-0-postgres-query-parser).
 
 ## Installation
 
