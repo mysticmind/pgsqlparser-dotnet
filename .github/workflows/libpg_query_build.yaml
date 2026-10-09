@@ -5,18 +5,30 @@ on:
 jobs:
   build-job:
     strategy:
+      # Each library is built against the oldest OS baseline that is practical on GitHub runners, so it
+      # loads on everything from that baseline up to the latest release:
+      # - Linux: built inside a manylinux2014 container (glibc 2.17). The runner's own glibc would
+      #   otherwise become the minimum required version.
+      # - macOS: the deployment target sets the minimum OS version, independent of the runner.
+      # - Windows: the CRT is linked statically, so only KERNEL32 is required.
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             artifacts_path: "artifacts/linux-x64"
-          - os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux2014_x86_64
+            max_glibc: "2.17"
+          - os: ubuntu-22.04-arm
             artifacts_path: "artifacts/linux-arm64"
-          - os: windows-latest
+            container: quay.io/pypa/manylinux2014_aarch64
+            max_glibc: "2.17"
+          - os: windows-2022
             artifacts_path: "artifacts/win-x64"
           - os: macos-15-intel
-            artifacts_path: "artifacts/osx-x64"  
-          - os: macos-latest
+            artifacts_path: "artifacts/osx-x64"
+            macos_target: "10.15"
+          - os: macos-14
             artifacts_path: "artifacts/osx-arm64"
+            macos_target: "11.0"
       fail-fast: false
     runs-on: ${{ matrix.os }} 
     steps:
@@ -33,7 +45,18 @@ jobs:
       - name: Setup Developer Command Prompt
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+      - name: Build artifacts in container
+        if: matrix.container != ''
+        run: |
+          # Strip debug info and unneeded symbols, which otherwise make up most of the file.
+          docker run --rm -v "$PWD":/work -w /work/src/libpg_query ${{ matrix.container }} \
+            sh -c "make -f Makefile build_shared -j4 && strip --strip-unneeded libpg_query.so"
+          cp src/libpg_query/libpg_query.so "src/${{ matrix.artifacts_path }}/libpg_query.so"
+        shell: bash
       - name: Build artifacts
+        if: matrix.container == ''
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_target }}
         run: |
           if ($env:RUNNER_OS -eq 'Windows') {
               nmake /f Makefile.msvc build_shared
@@ -50,6 +73,22 @@ jobs:
           }
         shell: pwsh
         working-directory: src/libpg_query
+      - name: Check minimum glibc version
+        if: matrix.max_glibc != ''
+        run: |
+          lib="src/${{ matrix.artifacts_path }}/libpg_query.so"
+          required=$(objdump -T "$lib" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
+          echo "Requires glibc $required (allowed: ${{ matrix.max_glibc }})"
+          [ "$(printf '%s\n' "$required" "${{ matrix.max_glibc }}" | sort -V | tail -1)" = "${{ matrix.max_glibc }}" ]
+        shell: bash
+      - name: Check minimum macOS version
+        if: matrix.macos_target != ''
+        run: |
+          lib="src/${{ matrix.artifacts_path }}/libpg_query.dylib"
+          minos=$(otool -l "$lib" | awk '/LC_BUILD_VERSION/{f=1} f && /minos/{print $2; exit}')
+          echo "Requires macOS $minos (expected: ${{ matrix.macos_target }})"
+          [ "$minos" = "${{ matrix.macos_target }}" ]
+        shell: bash
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
