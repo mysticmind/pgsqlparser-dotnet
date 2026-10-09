@@ -35,6 +35,10 @@ jobs:
             musl: true
           - os: windows-2022
             artifacts_path: "artifacts/win-x64"
+          # Cross-compiled on the x64 runner with the MSVC ARM64 toolchain.
+          - os: windows-2022
+            artifacts_path: "artifacts/win-arm64"
+            msvc_arch: amd64_arm64
           - os: macos-15-intel
             artifacts_path: "artifacts/osx-x64"
             macos_target: "10.15"
@@ -57,6 +61,8 @@ jobs:
       - name: Setup Developer Command Prompt
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch || 'x64' }}
       - name: Build artifacts in container
         if: matrix.container != ''
         run: |

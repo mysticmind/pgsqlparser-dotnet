@@ -20,7 +20,7 @@ jobs:
       matrix:
         # The oldest and the latest runner of each platform, so the packaged native libraries are
         # exercised at both ends. macos-15-intel is the only Intel macOS runner.
-        os: [ubuntu-22.04, ubuntu-latest, ubuntu-22.04-arm, ubuntu-24.04-arm, macos-15-intel, macos-14, macos-latest, windows-2022, windows-latest]
+        os: [ubuntu-22.04, ubuntu-latest, ubuntu-22.04-arm, ubuntu-24.04-arm, macos-15-intel, macos-14, macos-latest, windows-2022, windows-latest, windows-11-arm]
     runs-on: ${{ matrix.os }}
     continue-on-error: true
     steps:
@@ -136,7 +136,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15-intel, macos-latest, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15-intel, macos-latest, windows-latest, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
       - name: checkout repo
