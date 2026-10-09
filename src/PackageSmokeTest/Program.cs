@@ -40,6 +40,11 @@ Check("ParsePlpgsql", Parser.ParsePlpgsql(
 var tree = Parser.Parse("SELECT 1").Value!;
 Check("ParseResult to JSON", tree.ToString().Contains("\"SelectStmt\""));
 Check("ParseResult from JSON", Parser.Deparse(ParseResult.Parser.ParseJson(tree.ToString())).Value == "SELECT 1");
+// The tree walker reads fields through Protobuf's reflection API, so check it under Native AOT too.
+var walked = Parser.Parse(query).Value!;
+Check("Descendants", walked.Descendants<RangeVar>().Select(table => table.Relname).SequenceEqual(["données"]));
+Check("Unwrap", walked.Stmts[0].Stmt.Unwrap() is SelectStmt);
+Check("GetText", walked.Stmts[1].GetText(query) == "SELECT 2");
 Check("Error", Parser.Parse("SELECT FROM WHERE").Error?.Message?.StartsWith("syntax error") == true);
 
 return failed ? 1 : 0;
