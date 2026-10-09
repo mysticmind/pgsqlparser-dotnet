@@ -229,6 +229,40 @@ foreach (var visit in tree.Walk())
 
 `visit.Ancestors` lists every containing node, nearest first.
 
+#### Changing and comparing trees
+
+`Rewrite` walks the tree and lets you keep, replace or remove each node. It changes the tree in place, visiting children before their parents, and the result can be deparsed:
+
+```csharp
+var tree = Parser.Parse("SELECT a, secret FROM old_name WHERE kind = 'x'::text").GetValueOrThrow();
+
+tree.Rewrite(visit => visit.Node switch
+{
+    // Point the query at another table
+    RangeVar { Relname: "old_name" } => NodeEdit.ReplaceWith(new RangeVar { Relname = "new_name", Inh = true, Relpersistence = "p" }),
+    // Drop a cast, keeping what it wraps
+    TypeCast cast => NodeEdit.ReplaceWith(cast.Arg),
+    // Remove an item from a list
+    ResTarget target when target.Deparse().Value == "secret" => NodeEdit.Remove,
+    _ => NodeEdit.Keep
+});
+
+Console.WriteLine(tree.Deparse().GetValueOrThrow());
+// Output: SELECT a FROM new_name WHERE kind = 'x'
+```
+
+`EqualsIgnoringLocations` compares two trees, or two nodes, by structure. Queries that differ only in whitespace, comments, keyword case or redundant parentheses are equal:
+
+```csharp
+var a = Parser.Parse("SELECT a FROM t WHERE x <> 1").GetValueOrThrow();
+var b = Parser.Parse("select a\nfrom t -- note\nwhere (x != 1)").GetValueOrThrow();
+
+Console.WriteLine(a.EqualsIgnoringLocations(b));
+// Output: True
+```
+
+A few helpers go with these: `Parser.ParseExpression` and `Parser.ParseTypeName` parse a single expression or type name on its own, `node.AsNode()` wraps a node for a property or list that takes any node, and `PgIdentifier.Quote` quotes a name the way PostgreSQL's `quote_ident` does.
+
 `Walk` and `Descendants` visit parents before their children and siblings in field order, which is not always the order of the query text. `GetLocation()` returns a node's location if it has one; see [Offsets and non-ASCII text](#offsets-and-non-ascii-text) for its unit. Only statements record a length, so `GetText` is available for statements and not for other nodes.
 
 ### Scan
@@ -542,6 +576,20 @@ Two kinds of invalid input are caught before the query reaches libpg_query:
 Deeply nested queries, such as a long chain of operators without parentheses (`a || b || c ...`) or many nested subqueries, are read on a dedicated thread with a large enough stack, so they cannot overflow the stack of the calling thread. A parse tree nested more than 4000 levels deep is rejected with an `Error`. The PostgreSQL parser has its own limit, which depends on the stack available to the calling thread and reports `stack depth limit exceeded`.
 
 Protobuf's own recursive operations on a parse tree, such as `ToString()`, `Clone()` and `Equals()`, run on your thread. On a very deeply nested tree they can still overflow a small stack.
+
+## What's new in 2.1
+
+All additions; nothing from 2.0 changes.
+
+- **Deparse a single node**: `node.Deparse()` turns one clause, expression or table reference back into SQL.
+- **More control when walking**: skip a subtree or stop, and each visit knows its ancestors, the property it came from and its top-level statement.
+- **Change trees**: `Rewrite` keeps, replaces or removes nodes in place.
+- **Compare trees**: `EqualsIgnoringLocations` treats queries that differ only in formatting as equal.
+- **Parse fragments**: `ParseExpression` and `ParseTypeName`.
+- **Parameters**: `ParameterRefs` finds each `$n`, where it is, and the type it is cast to.
+- **Identifier quoting**: `PgIdentifier.Quote`, following PostgreSQL's `quote_ident`.
+
+See [Navigating the parse tree](#navigating-the-parse-tree) and [ParameterRefs](#parameterrefs).
 
 ## What's new in 2.0
 

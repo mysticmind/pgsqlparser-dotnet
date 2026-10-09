@@ -416,6 +416,66 @@ public static class Parser
     }
     
     /// <summary>
+    /// Parse a single expression on its own, such as a column default, a CHECK condition or what
+    /// <c>pg_get_expr</c> returns. Anything that is not exactly one expression is an error. Locations
+    /// in the returned node are not relative to <paramref name="expression"/>.
+    /// </summary>
+    /// <param name="expression"></param>
+    /// <returns></returns>
+    public static Result<Node> ParseExpression(string expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+
+        // In a WHERE clause there is room for exactly one expression, with no alias and no list.
+        // The line break lets the expression end in a line comment.
+        var parsed = Parse($"SELECT WHERE {expression}\n");
+        if (!parsed.TryGetValue(out var tree, out var error))
+            return Result<Node>.Failure(error);
+
+        if (tree.Stmts.Count == 1
+            && tree.Stmts[0].Stmt?.SelectStmt is { WhereClause: { } value } select
+            && select.Equals(new SelectStmt { WhereClause = value, LimitOption = select.LimitOption, Op = SetOperation.SetopNone }))
+        {
+            return Result<Node>.Success(value);
+        }
+
+        return Result<Node>.Failure(NodeError("not a single expression"));
+    }
+
+    /// <summary>
+    /// Parse a type name on its own, such as <c>numeric(10,2)</c>, <c>text[]</c> or <c>public.my_type</c>.
+    /// </summary>
+    /// <param name="typeName"></param>
+    /// <returns></returns>
+    public static Result<TypeName> ParseTypeName(string typeName)
+    {
+        ArgumentNullException.ThrowIfNull(typeName);
+
+        var parsed = Parse($"SELECT NULL::{typeName}");
+        if (!parsed.TryGetValue(out var tree, out var error))
+            return Result<TypeName>.Failure(error);
+
+        if (tree.Stmts.Count == 1
+            && tree.Stmts[0].Stmt?.SelectStmt is { TargetList.Count: 1 } select
+            && select.TargetList[0].ResTarget is { Name: "" } target
+            && target.Val?.TypeCast is { TypeName: { } type, Arg.AConst.Isnull: true }
+            && IsBareSelect(select))
+        {
+            return Result<TypeName>.Success(type);
+        }
+
+        return Result<TypeName>.Failure(NodeError("not a single type name"));
+    }
+
+    // True if the SELECT has a select list and nothing else.
+    private static bool IsBareSelect(SelectStmt select)
+    {
+        var bare = new SelectStmt { LimitOption = select.LimitOption, Op = select.Op };
+        bare.TargetList.Add(select.TargetList);
+        return bare.Equals(select);
+    }
+
+    /// <summary>
     /// Parse PL/pgSQL function bodies and returns a JSON representation
     /// </summary>
     /// <param name="query"></param>
@@ -872,11 +932,10 @@ public static class Parser
                 return Deparse(new ParseResult { Version = PgVersionNum, Stmts = { rawStmt } });
         }
 
-        if (!NodeFields.Value.TryGetValue(node.Descriptor.FullName, out var nodeField))
+        if (!ParseTreeExtensions.NodeFields.Value.ContainsKey(node.Descriptor.FullName))
             return Result<string>.Failure(NodeError($"a {node.Descriptor.Name} cannot be deparsed on its own"));
 
-        var wrapped = new Node();
-        nodeField.Accessor.SetValue(wrapped, node);
+        var wrapped = node.AsNode();
 
         if (node.Descriptor.Name.EndsWith("Stmt", StringComparison.Ordinal))
             return Deparse(new ParseResult { Version = PgVersionNum, Stmts = { new RawStmt { Stmt = wrapped } } });
@@ -937,12 +996,6 @@ public static class Parser
 
         return Result<string>.Success(sql[prefix.Length..^suffix.Length]);
     }
-
-    // The Node field that holds each node type, keyed by the node type's full name.
-    private static readonly Lazy<Dictionary<string, Google.Protobuf.Reflection.FieldDescriptor>> NodeFields = new(() =>
-        Node.Descriptor.Fields.InDeclarationOrder()
-            .Where(field => field.FieldType == Google.Protobuf.Reflection.FieldType.Message)
-            .ToDictionary(field => field.MessageType.FullName));
 
     private static Error NodeError(string message) => new(message, null, null, 0, 0, null);
 

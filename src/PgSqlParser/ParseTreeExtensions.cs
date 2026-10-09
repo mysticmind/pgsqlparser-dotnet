@@ -80,6 +80,37 @@ public readonly record struct NodeVisit(IMessage Node, IMessage? Parent, int Dep
     }
 }
 
+/// <summary>
+/// What <see cref="ParseTreeExtensions.Rewrite"/> does with a node after visiting it.
+/// </summary>
+public readonly struct NodeEdit
+{
+    private NodeEdit(bool remove, IMessage? replacement)
+    {
+        IsRemove = remove;
+        Replacement = replacement;
+    }
+
+    internal bool IsRemove { get; }
+    internal IMessage? Replacement { get; }
+
+    /// <summary>Leave the node as it is.</summary>
+    public static NodeEdit Keep => default;
+
+    /// <summary>Remove the node: from its list, or by clearing the property that holds it.</summary>
+    public static NodeEdit Remove => new(true, null);
+
+    /// <summary>
+    /// Put <paramref name="node"/> in the node's place. Where the parent's property takes any node,
+    /// any node type is accepted; where it takes one specific type, the replacement must be of that type.
+    /// </summary>
+    public static NodeEdit ReplaceWith(IMessage node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        return new NodeEdit(false, node);
+    }
+}
+
 // One link of the chain from a visited node up to the root of the walk.
 internal sealed class WalkFrame(IMessage node, WalkFrame? parent)
 {
@@ -228,6 +259,200 @@ public static class ParseTreeExtensions
     public static Result<string> Deparse(this IMessage node)
     {
         return Parser.DeparseNode(node);
+    }
+
+    /// <summary>
+    /// Wraps a node in a <see cref="Node"/>, the type most parse tree properties and lists hold.
+    /// A <see cref="Node"/> is returned as it is.
+    /// </summary>
+    public static Node AsNode(this IMessage node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        if (node is Node already)
+            return already;
+
+        if (!NodeFields.Value.TryGetValue(node.Descriptor.FullName, out var field))
+            throw new ArgumentException($"A {node.Descriptor.Name} cannot be held by a Node.", nameof(node));
+
+        var wrapper = new Node();
+        field.Accessor.SetValue(wrapper, node);
+        return wrapper;
+    }
+
+    // The Node field that holds each node type, keyed by the node type's full name.
+    internal static readonly Lazy<Dictionary<string, FieldDescriptor>> NodeFields = new(() =>
+        Node.Descriptor.Fields.InDeclarationOrder()
+            .Where(field => field.FieldType == FieldType.Message)
+            .ToDictionary(field => field.MessageType.FullName));
+
+    /// <summary>
+    /// Walks the nodes below <paramref name="root"/> and lets <paramref name="visitor"/> keep, replace or
+    /// remove each one. The tree is changed in place. Children are visited before their parent, so a
+    /// visitor sees a node after everything below it has already been rewritten. A replacement is not
+    /// visited again.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A replacement does not fit the property that holds the node.</exception>
+    public static void Rewrite(this IMessage root, Func<NodeVisit, NodeEdit> visitor)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(visitor);
+
+        RewriteChildren(root is Node rootWrapper ? rootWrapper.Unwrap() : root, null, visitor);
+    }
+
+    private static void RewriteChildren(IMessage? message, NodeVisit? owner, Func<NodeVisit, NodeEdit> visitor)
+    {
+        if (message is null)
+            return;
+
+        // Recursive, so stop with an exception before a very deep tree can overflow the stack.
+        System.Runtime.CompilerServices.RuntimeHelpers.EnsureSufficientExecutionStack();
+
+        var frame = owner is { } ownerVisit ? new WalkFrame(ownerVisit.Node, ownerVisit.ParentFrame) : null;
+        var depth = (owner?.Depth ?? 0) + 1;
+        var startsStatements = owner is null && message is ParseResult;
+
+        foreach (var field in message.Descriptor.Fields.InFieldNumberOrder())
+        {
+            if (field.FieldType != FieldType.Message || field.IsMap)
+                continue;
+
+            var value = field.Accessor.GetValue(message);
+            if (field.IsRepeated)
+            {
+                var items = (System.Collections.IList)value;
+                for (var i = 0; i < items.Count; i++)
+                {
+                    var edit = Visit((IMessage)items[i]!, i);
+                    if (edit.IsRemove)
+                        items.RemoveAt(i--);
+                    else if (edit.Replacement is { } replacement)
+                        items[i] = Fit(replacement, field);
+                }
+            }
+            else if (value is IMessage child)
+            {
+                var edit = Visit(child, null);
+                if (edit.IsRemove)
+                    field.Accessor.Clear(message);
+                else if (edit.Replacement is { } replacement)
+                    field.Accessor.SetValue(message, Fit(replacement, field));
+            }
+
+            continue;
+
+            NodeEdit Visit(IMessage child, int? index)
+            {
+                var node = child is Node wrapper ? wrapper.Unwrap() : child;
+                if (node is null)
+                    return NodeEdit.Keep;
+
+                var statement = startsStatements ? node as RawStmt : owner?.Statement;
+                var visit = new NodeVisit(node, owner?.Node, depth)
+                {
+                    FieldName = field.PropertyName,
+                    Index = index,
+                    Statement = statement,
+                    StatementIndex = startsStatements && statement is not null ? index : owner?.StatementIndex,
+                    ParentFrame = frame
+                };
+
+                RewriteChildren(node, visit, visitor);
+                return visitor(visit);
+            }
+        }
+    }
+
+    // Makes a replacement fit the property: wrapped in a Node where the property takes any node,
+    // otherwise it has to be of the property's own type.
+    private static IMessage Fit(IMessage replacement, FieldDescriptor field)
+    {
+        if (field.MessageType == Node.Descriptor)
+            return replacement.AsNode();
+
+        var node = replacement is Node wrapper ? wrapper.Unwrap() : replacement;
+        if (node is null || node.Descriptor != field.MessageType)
+        {
+            throw new InvalidOperationException(
+                $"{field.ContainingType.Name}.{field.PropertyName} holds a {field.MessageType.Name}, " +
+                $"so it cannot be replaced with a {(node ?? replacement).Descriptor.Name}.");
+        }
+
+        return node;
+    }
+
+    /// <summary>
+    /// Compares two parse trees, or two nodes, by structure and ignoring where each node was in its
+    /// query text. Two queries that differ only in whitespace, comments, keyword case or redundant
+    /// parentheses give trees that are equal by this comparison.
+    /// </summary>
+    public static bool EqualsIgnoringLocations(this IMessage? left, IMessage? right)
+    {
+        var pending = new Stack<(IMessage? Left, IMessage? Right)>();
+        pending.Push((left, right));
+
+        while (pending.Count > 0)
+        {
+            var (a, b) = pending.Pop();
+            if (ReferenceEquals(a, b))
+                continue;
+
+            if (a is null || b is null || a.Descriptor != b.Descriptor)
+                return false;
+
+            // A Node holds exactly one of 271 fields. Compare what it wraps instead of reading them all.
+            if (a is Node nodeA && b is Node nodeB)
+            {
+                pending.Push((nodeA.Unwrap(), nodeB.Unwrap()));
+                continue;
+            }
+
+            foreach (var field in a.Descriptor.Fields.InFieldNumberOrder())
+            {
+                if (IsLocationField(field))
+                    continue;
+
+                var valueA = field.Accessor.GetValue(a);
+                var valueB = field.Accessor.GetValue(b);
+                if (field.IsRepeated)
+                {
+                    var listA = (System.Collections.IList)valueA;
+                    var listB = (System.Collections.IList)valueB;
+                    if (listA.Count != listB.Count)
+                        return false;
+
+                    for (var i = 0; i < listA.Count; i++)
+                    {
+                        if (field.FieldType == FieldType.Message)
+                            pending.Push(((IMessage?)listA[i], (IMessage?)listB[i]));
+                        else if (!Equals(listA[i], listB[i]))
+                            return false;
+                    }
+                }
+                else if (field.FieldType == FieldType.Message)
+                {
+                    pending.Push((valueA as IMessage, valueB as IMessage));
+                }
+                else if (!Equals(valueA, valueB))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    // Positions in the query text: "location", "stmt_location", "arg_location" and so on, and the
+    // statement length that goes with stmt_location.
+    private static bool IsLocationField(FieldDescriptor field)
+    {
+        return field.FieldType == FieldType.Int32
+               && !field.IsRepeated
+               && (field.Name == LocationFieldName
+                   || field.Name.EndsWith("_location", StringComparison.Ordinal)
+                   || field.Name == "stmt_len");
     }
 
     // An explicit stack instead of recursion, so a deeply nested tree cannot overflow the call stack.
