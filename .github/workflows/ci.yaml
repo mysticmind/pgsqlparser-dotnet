@@ -181,6 +181,14 @@ jobs:
             dotnet run --project src/PackageSmokeTest -f $tfm -p:PgSqlParserVersion=$PACKAGE_VERSION
           done
         shell: bash
+      # Compiles the same app ahead of time into a native executable, which fails if the library
+      # relies on anything Native AOT cannot do, such as runtime marshalling.
+      - name: Run package smoke test with Native AOT
+        run: |
+          dotnet publish src/PackageSmokeTest -f net10.0 -c Release --use-current-runtime \
+            -p:PublishAot=true -p:PgSqlParserVersion=$PACKAGE_VERSION -o artifacts/aot
+          ./artifacts/aot/PackageSmokeTest
+        shell: bash
 
   # The same smoke test inside Linux containers: Alpine (musl) on each .NET version, and the oldest
   # supported Alpine and glibc systems. The app is built on the runner as a portable app, so the

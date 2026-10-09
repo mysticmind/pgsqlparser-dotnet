@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Google.Protobuf;
 using PgSqlParser.Utils;
@@ -694,7 +695,7 @@ public static class Parser
             for (var i = 0; i < count; i++)
             {
                 var commentPtr = Marshal.ReadIntPtr(result.comments, i * IntPtr.Size);
-                var comment = Marshal.PtrToStructure<LibPgQuery.PostgresDeparseComment>(commentPtr);
+                var comment = ReadStruct<LibPgQuery.PostgresDeparseComment>(commentPtr);
                 comments.Add(new DeparseComment(
                     comment.match_location,
                     comment.newlines_before_comment,
@@ -738,17 +739,17 @@ public static class Parser
         {
             for (var i = 0; i < comments.Count; i++)
             {
-                var commentPtr = Marshal.AllocHGlobal(Marshal.SizeOf<LibPgQuery.PostgresDeparseComment>());
+                var commentPtr = Marshal.AllocHGlobal(Unsafe.SizeOf<LibPgQuery.PostgresDeparseComment>());
                 Marshal.WriteIntPtr(array, i * IntPtr.Size, commentPtr);
                 // Zero it first so a failure below leaves nothing dangling for FreeDeparseComments.
-                Marshal.StructureToPtr(new LibPgQuery.PostgresDeparseComment(), commentPtr, false);
-                Marshal.StructureToPtr(new LibPgQuery.PostgresDeparseComment
+                WriteStruct(commentPtr, new LibPgQuery.PostgresDeparseComment());
+                WriteStruct(commentPtr, new LibPgQuery.PostgresDeparseComment
                 {
                     match_location = comments[i].MatchLocation,
                     newlines_before_comment = comments[i].NewlinesBeforeComment,
                     newlines_after_comment = comments[i].NewlinesAfterComment,
                     str = Marshal.StringToCoTaskMemUTF8(comments[i].Text)
-                }, commentPtr, false);
+                });
             }
         }
         catch
@@ -771,7 +772,7 @@ public static class Parser
             if (commentPtr == IntPtr.Zero)
                 continue;
 
-            Marshal.FreeCoTaskMem(Marshal.PtrToStructure<LibPgQuery.PostgresDeparseComment>(commentPtr).str);
+            Marshal.FreeCoTaskMem(ReadStruct<LibPgQuery.PostgresDeparseComment>(commentPtr).str);
             Marshal.FreeHGlobal(commentPtr);
         }
 
@@ -789,7 +790,7 @@ public static class Parser
         for (var i = 0; i < nStmts; i++)
         {
             var stmtPtrPtr = Marshal.ReadIntPtr(stmts, i * IntPtr.Size);
-            var stmt = Marshal.PtrToStructure<LibPgQuery.PgQuerySplitStmt>(stmtPtrPtr);
+            var stmt = ReadStruct<LibPgQuery.PgQuerySplitStmt>(stmtPtrPtr);
 
             var charStart = ToCharOffset(offsets, stmt.stmt_location);
             var charEnd = ToCharOffset(offsets, stmt.stmt_location + stmt.stmt_len);
@@ -839,6 +840,12 @@ public static class Parser
         return new Error("query contains a NUL character", null, null, 0, cursorPos, null);
     }
 
+    // Plain pointer reads and writes of blittable structs, in place of the reflection-based
+    // Marshal.PtrToStructure and Marshal.StructureToPtr, which do not work with Native AOT.
+    private static unsafe T ReadStruct<T>(IntPtr ptr) where T : unmanaged => *(T*)ptr;
+
+    private static unsafe void WriteStruct<T>(IntPtr ptr, T value) where T : unmanaged => *(T*)ptr = value;
+
     private static byte[] ReadProtobuf(LibPgQuery.PgQueryProtobuf pbuf)
     {
         var len = checked((int)pbuf.len);
@@ -849,7 +856,7 @@ public static class Parser
 
     private static Error ParseError(IntPtr errorPtr)
     {
-        var error = Marshal.PtrToStructure<LibPgQuery.PgQueryError>(errorPtr);
+        var error = ReadStruct<LibPgQuery.PgQueryError>(errorPtr);
         return new Error(
             Marshal.PtrToStringUTF8(error.message),
             Marshal.PtrToStringUTF8(error.funcname),

@@ -31,6 +31,13 @@
     <ContinuousIntegrationBuild Condition=" '$(GITHUB_ACTIONS)' == 'true' ">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Marks the package as safe for trimming and Native AOT, and turns on the analyzers that check it -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <!-- Needed by the source-generated P/Invoke code -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Google.Protobuf" Version="3.33.0" />
     <PackageReference Include="Grpc.Tools" Version="2.84.0">

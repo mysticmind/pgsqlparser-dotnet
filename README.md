@@ -19,7 +19,7 @@ Note that the libpg_query libs for all OS'es are already packaged with the assem
 | macOS | `osx-x64`, `osx-arm64` | macOS 10.15 (Intel), macOS 11.0 (Apple silicon) |
 | Windows | `win-x64`, `win-arm64` | |
 
-This version is built on libpg_query 18.1.0, which uses the PostgreSQL 18.6 parser. It targets .NET 8, .NET 9 and .NET 10.
+This version is built on libpg_query 18.1.0, which uses the PostgreSQL 18.6 parser. It targets .NET 8, .NET 9 and .NET 10, and is compatible with trimming and Native AOT.
 
 ## Usage
 
