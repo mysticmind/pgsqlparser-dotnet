@@ -216,6 +216,33 @@ if (result.Error is null)
 // [{"PLpgSQL_function":{"datums":[{"PLpgSQL_var":{"refname":"found","datatype":{"PLpgSQL_type":{"typname":"bool"}}}},{"PLpgSQL_var":{"refname":"r","lineno":3,"datatype":{"PLpgSQL_type":{"typname":"foo%rowtype"}}}},{"PLpgSQL_row":{"refname":"(unnamed row)","lineno":5,"fields":[{"name":"r","varno":1}]}}],"action":{"PLpgSQL_stmt_block":{"lineno":4,"body":[{"PLpgSQL_stmt_fors":{"lineno":5,"var":{"PLpgSQL_row":{"refname":"(unnamed row)","lineno":5,"fields":[{"name":"r","varno":1}]}},"body":[{"PLpgSQL_stmt_return_next":{"lineno":9}}],"query":{"PLpgSQL_expr":{"query":"SELECT * FROM foo WHERE fooid \u003e 0","parseMode":0}}}},{"PLpgSQL_stmt_return":{"lineno":11}}]}}}}]
 ```
 
+`ParsePlpgsqlFunctions` returns the same information as objects, one `PlpgsqlFunction` per `CREATE FUNCTION` or `DO` statement:
+
+```csharp
+var function = Parser.ParsePlpgsqlFunctions(sql).GetValueOrThrow()[0];
+
+// Variables and parameters
+foreach (var datum in function.Datums)
+{
+    Console.WriteLine($"{datum.Kind}: {datum.GetString("refname")}");
+}
+
+// Every statement, including nested ones
+foreach (var statement in function.Statements())
+{
+    Console.WriteLine($"line {statement.LineNo}: {statement.Kind}");
+}
+
+// The SQL inside the function, ready to pass to Parser.Parse
+foreach (var query in function.Queries())
+{
+    Console.WriteLine(query);
+}
+// Output: SELECT * FROM foo WHERE fooid > 0
+```
+
+libpg_query has no schema for its PL/pgSQL output, so a node (`PlpgsqlNode`) exposes its `Kind`, its `Children` and its raw `Json` (a `JsonElement`) and not typed properties per statement kind.
+
 ### Fingerprint
 
 Generate a normalized hash (fingerprint) of a SQL statement, ignoring literals, whitespace, and minor variations

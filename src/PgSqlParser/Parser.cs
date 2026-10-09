@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Google.Protobuf;
 using PgSqlParser.Utils;
 
@@ -432,6 +433,104 @@ public static class Parser
     public static Task<Result<string>> ParsePlpgsqlAsync(string query, CancellationToken cancellationToken = default)
     {
         return RunAsync(() => ParsePlpgsql(query), cancellationToken);
+    }
+
+    /// <summary>
+    /// Parse PL/pgSQL function bodies into objects. Each <c>CREATE FUNCTION</c> and <c>DO</c> statement
+    /// in <paramref name="query"/> gives one <see cref="PlpgsqlFunction"/>, with its variables, its
+    /// statements and the SQL they contain. <see cref="ParsePlpgsql"/> returns the same data as a JSON string.
+    /// </summary>
+    /// <param name="query"></param>
+    /// <returns></returns>
+    public static Result<IReadOnlyList<PlpgsqlFunction>> ParsePlpgsqlFunctions(string query)
+    {
+        var json = ParsePlpgsql(query);
+        if (!json.TryGetValue(out var text, out var error))
+            return Result<IReadOnlyList<PlpgsqlFunction>>.Failure(error);
+
+        // Clone detaches the elements from the pooled document, so nothing needs disposing later.
+        JsonElement root;
+        try
+        {
+            using var document = JsonDocument.Parse(RepairPlpgsqlJson(text));
+            root = document.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            return Result<IReadOnlyList<PlpgsqlFunction>>.Failure(
+                new Error("libpg_query returned PL/pgSQL JSON that could not be read", null, null, 0, 0, null));
+        }
+
+        var functions = new List<PlpgsqlFunction>();
+        foreach (var element in root.EnumerateArray())
+        {
+            if (PlpgsqlNode.TryCreate(element, out var node))
+                functions.Add(new PlpgsqlFunction(node));
+        }
+
+        return Result<IReadOnlyList<PlpgsqlFunction>>.Success(functions);
+    }
+
+    /// <summary>
+    /// libpg_query 18.1.0 writes a data item it has no output for (the TG_* variables of trigger
+    /// functions) as <c>{}}</c> where <c>{}</c> is meant, which is not valid JSON. This drops the
+    /// stray brace. A valid <c>{}}</c>, an empty object closing its parent, always follows a colon,
+    /// while the broken one is an array element and so follows a comma or an opening bracket.
+    /// </summary>
+    private static string RepairPlpgsqlJson(string json)
+    {
+        const string broken = "{}}";
+        if (!json.Contains(broken, StringComparison.Ordinal))
+            return json;
+
+        var repaired = new System.Text.StringBuilder(json.Length);
+        var inString = false;
+        var previous = '\0';
+        for (var i = 0; i < json.Length; i++)
+        {
+            var c = json[i];
+            if (inString)
+            {
+                repaired.Append(c);
+                if (c == '\\')
+                    repaired.Append(json[++i]);
+                else if (c == '"')
+                {
+                    inString = false;
+                    previous = c;
+                }
+
+                continue;
+            }
+
+            if (c == '{' && (previous is ',' or '[') && string.CompareOrdinal(json, i, broken, 0, broken.Length) == 0)
+            {
+                repaired.Append("{}");
+                i += broken.Length - 1;
+                previous = '}';
+                continue;
+            }
+
+            if (c == '"')
+                inString = true;
+            if (!char.IsWhiteSpace(c))
+                previous = c;
+            repaired.Append(c);
+        }
+
+        return repaired.ToString();
+    }
+
+    /// <summary>
+    /// Async parse PL/pgSQL function bodies into objects
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public static Task<Result<IReadOnlyList<PlpgsqlFunction>>> ParsePlpgsqlFunctionsAsync(string query,
+        CancellationToken cancellationToken = default)
+    {
+        return RunAsync(() => ParsePlpgsqlFunctions(query), cancellationToken);
     }
 
     /// <summary>
