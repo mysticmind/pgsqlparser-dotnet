@@ -20,6 +20,71 @@ public readonly record struct NodeVisit(IMessage Node, IMessage? Parent, int Dep
 
     /// <summary>The node's position if that property is a list, otherwise null.</summary>
     public int? Index { get; init; }
+
+    /// <summary>
+    /// The top-level statement the node belongs to, when the walk started from a <see cref="ParseResult"/>.
+    /// For the statement's own <see cref="RawStmt"/> this is that node.
+    /// </summary>
+    public RawStmt? Statement { get; init; }
+
+    /// <summary>The position of <see cref="Statement"/> in <see cref="ParseResult.Stmts"/>, or null.</summary>
+    public int? StatementIndex { get; init; }
+
+    internal WalkFrame? ParentFrame { get; init; }
+
+    /// <summary>
+    /// The nodes that contain this one, nearest first: <see cref="Parent"/>, then its parent, and so on
+    /// up to the node directly below the root of the walk.
+    /// </summary>
+    public IEnumerable<IMessage> Ancestors
+    {
+        get
+        {
+            for (var frame = ParentFrame; frame is not null; frame = frame.Parent)
+                yield return frame.Node;
+        }
+    }
+
+    /// <summary>
+    /// Returns the nearest containing node of type <typeparamref name="T"/>, or null. For example
+    /// <c>visit.FindAncestor&lt;CommonTableExpr&gt;()</c> tells whether a node is inside a CTE.
+    /// </summary>
+    public T? FindAncestor<T>() where T : class, IMessage
+    {
+        for (var frame = ParentFrame; frame is not null; frame = frame.Parent)
+        {
+            if (frame.Node is T match)
+                return match;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Two visits are equal when they are the same node in the same place. Nodes are compared by
+    /// reference, since a tree can hold equal-looking nodes in different places.
+    /// </summary>
+    public bool Equals(NodeVisit other)
+    {
+        return ReferenceEquals(Node, other.Node)
+               && ReferenceEquals(Parent, other.Parent)
+               && Depth == other.Depth
+               && FieldName == other.FieldName
+               && Index == other.Index
+               && StatementIndex == other.StatementIndex;
+    }
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Node), Depth, FieldName, Index);
+    }
+}
+
+// One link of the chain from a visited node up to the root of the walk.
+internal sealed class WalkFrame(IMessage node, WalkFrame? parent)
+{
+    public IMessage Node { get; } = node;
+    public WalkFrame? Parent { get; } = parent;
 }
 
 /// <summary>
@@ -80,7 +145,7 @@ public static class ParseTreeExtensions
         ArgumentNullException.ThrowIfNull(visitor);
 
         var pending = new Stack<NodeVisit>();
-        PushChildren(pending, root is Node rootWrapper ? rootWrapper.Unwrap() : root, null, 1);
+        PushChildren(pending, root is Node rootWrapper ? rootWrapper.Unwrap() : root, null);
 
         while (pending.Count > 0)
         {
@@ -90,7 +155,7 @@ public static class ParseTreeExtensions
                 return;
 
             if (action == WalkAction.Continue)
-                PushChildren(pending, visit.Node, visit.Node, visit.Depth + 1);
+                PushChildren(pending, visit.Node, visit);
         }
     }
 
@@ -169,20 +234,26 @@ public static class ParseTreeExtensions
     private static IEnumerable<NodeVisit> WalkIterator(IMessage root)
     {
         var pending = new Stack<NodeVisit>();
-        PushChildren(pending, root is Node rootWrapper ? rootWrapper.Unwrap() : root, null, 1);
+        PushChildren(pending, root is Node rootWrapper ? rootWrapper.Unwrap() : root, null);
 
         while (pending.Count > 0)
         {
             var visit = pending.Pop();
             yield return visit;
-            PushChildren(pending, visit.Node, visit.Node, visit.Depth + 1);
+            PushChildren(pending, visit.Node, visit);
         }
     }
 
-    private static void PushChildren(Stack<NodeVisit> pending, IMessage? message, IMessage? parent, int depth)
+    // Pushes the children of message. owner is the visit of message itself, or null when message is the root.
+    private static void PushChildren(Stack<NodeVisit> pending, IMessage? message, NodeVisit? owner)
     {
         if (message is null)
             return;
+
+        var frame = owner is { } visit ? new WalkFrame(visit.Node, visit.ParentFrame) : null;
+        var depth = (owner?.Depth ?? 0) + 1;
+        // Statements are the direct children of a ParseResult that the walk started from.
+        var startsStatements = owner is null && message is ParseResult;
 
         // Pushed in reverse so they are popped, and so visited, in field order.
         var fields = message.Descriptor.Fields.InFieldNumberOrder();
@@ -197,21 +268,32 @@ public static class ParseTreeExtensions
             {
                 var items = (System.Collections.IList)value;
                 for (var j = items.Count - 1; j >= 0; j--)
-                    Push(pending, (IMessage)items[j]!, parent, depth, field, j);
+                    Push((IMessage)items[j]!, j);
             }
             else if (value is IMessage child)
             {
-                Push(pending, child, parent, depth, field, null);
+                Push(child, null);
+            }
+
+            continue;
+
+            void Push(IMessage child, int? index)
+            {
+                // A Node wrapper is transparent: the field and index are those of the wrapper.
+                var node = child is Node wrapper ? wrapper.Unwrap() : child;
+                if (node is null)
+                    return;
+
+                var statement = startsStatements ? node as RawStmt : owner?.Statement;
+                pending.Push(new NodeVisit(node, owner?.Node, depth)
+                {
+                    FieldName = field.PropertyName,
+                    Index = index,
+                    Statement = statement,
+                    StatementIndex = startsStatements && statement is not null ? index : owner?.StatementIndex,
+                    ParentFrame = frame
+                });
             }
         }
-    }
-
-    private static void Push(Stack<NodeVisit> pending, IMessage child, IMessage? parent, int depth,
-        FieldDescriptor field, int? index)
-    {
-        // A Node wrapper is transparent: the field and index are those of the wrapper.
-        var node = child is Node wrapper ? wrapper.Unwrap() : child;
-        if (node is not null)
-            pending.Push(new NodeVisit(node, parent, depth) { FieldName = field.PropertyName, Index = index });
     }
 }

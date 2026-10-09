@@ -208,6 +208,27 @@ tree.Walk(visit =>
 // visit.Index is the position when that property is a list.
 ```
 
+Each visit also knows where it sits in the tree, which is what most rules need:
+
+```csharp
+foreach (var visit in tree.Walk())
+{
+    if (visit.Node is not RangeVar table)
+        continue;
+
+    // The nearest containing node of a type, or null
+    var insideCte = visit.FindAncestor<CommonTableExpr>() is not null;
+    var insideSubquery = visit.FindAncestor<SubLink>() is not null;
+
+    // The top-level statement the node belongs to
+    var writes = visit.Statement?.Stmt.Unwrap() is InsertStmt or UpdateStmt or DeleteStmt;
+
+    Console.WriteLine($"statement {visit.StatementIndex}: {table.Relname} (cte: {insideCte}, subquery: {insideSubquery}, writes: {writes})");
+}
+```
+
+`visit.Ancestors` lists every containing node, nearest first.
+
 `Walk` and `Descendants` visit parents before their children and siblings in field order, which is not always the order of the query text. `GetLocation()` returns a node's location if it has one; see [Offsets and non-ASCII text](#offsets-and-non-ascii-text) for its unit. Only statements record a length, so `GetText` is available for statements and not for other nodes.
 
 ### Scan
@@ -248,6 +269,8 @@ foreach (var parameter in parameters)
 }
 // Output: $1 at 26..28, $2 at 37..39
 ```
+
+When a parameter is cast in the query, `TypeName` holds the type: `$1::int` gives `int`, and `CAST($2 AS numeric(10,2))` gives `numeric(10, 2)`. It is null for a parameter that is not cast.
 
 ### ParsePlpgsql
 

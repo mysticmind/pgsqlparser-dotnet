@@ -49,6 +49,9 @@ Check("DeparseNode", walked.Stmts[0].Stmt.SelectStmt.WhereClause.Deparse().Value
 var skipped = 0;
 walked.Walk(visit => { skipped++; return visit.Node is SelectStmt ? WalkAction.SkipChildren : WalkAction.Continue; });
 Check("Walk with a visitor", skipped == 4 && walked.Walk().First().FieldName == "Stmts");
+var tableVisit = walked.Walk().First(visit => visit.Node is RangeVar);
+Check("Ancestors and statement", tableVisit.FindAncestor<SelectStmt>() is not null && tableVisit.StatementIndex == 0);
+Check("ParameterRefs cast type", Parser.ParameterRefs("SELECT $1::int").Value?[0].TypeName == "int");
 Check("ParameterRefs", Parser.ParameterRefs("SELECT $1, '$2', $3").Value?.Select(p => p.Number).SequenceEqual([1, 3]) == true);
 Check("ParsePlpgsqlFunctions", Parser.ParsePlpgsqlFunctions(
     "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql").Value?[0].Queries().SequenceEqual(["1"]) == true);

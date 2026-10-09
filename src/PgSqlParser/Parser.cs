@@ -185,7 +185,14 @@ public record DeparseComment(int MatchLocation, int NewlinesBeforeComment, int N
 /// <param name="Number">The parameter number: 1 for <c>$1</c>.</param>
 /// <param name="Start">Where the reference starts in the query string, as a UTF-16 offset.</param>
 /// <param name="End">Where it ends (exclusive), so <c>query[Start..End]</c> is the reference.</param>
-public record ParameterRef(int Number, int Start, int End);
+public record ParameterRef(int Number, int Start, int End)
+{
+    /// <summary>
+    /// The type the parameter is cast to in the query, as in <c>$1::int</c> or <c>CAST($1 AS int)</c>,
+    /// or null if it is not cast or the query does not parse.
+    /// </summary>
+    public string? TypeName { get; init; }
+}
 
 /// <summary>
 /// Options for <see cref="Parser.Deparse(ParseResult, DeparseOptions)"/>.
@@ -942,6 +949,7 @@ public static class Parser
     /// <summary>
     /// Find the parameter references (<c>$1</c>, <c>$2</c>, ...) in a query, in the order they appear.
     /// A reference inside a string literal or a comment is not a parameter and is not returned.
+    /// When a parameter is cast, as in <c>$1::int</c>, its <see cref="ParameterRef.TypeName"/> is set.
     /// </summary>
     /// <param name="query"></param>
     /// <returns></returns>
@@ -962,7 +970,33 @@ public static class Parser
             }
         }
 
-        return Result<IReadOnlyList<ParameterRef>>.Success(parameters);
+        return Result<IReadOnlyList<ParameterRef>>.Success(WithCastTypes(query, parameters));
+    }
+
+    // The cast type needs the parse tree. A query that scans but does not parse keeps its parameters,
+    // only without types.
+    private static IReadOnlyList<ParameterRef> WithCastTypes(string query, List<ParameterRef> parameters)
+    {
+        if (parameters.Count == 0 || !Parse(query).TryGetValue(out var tree))
+            return parameters;
+
+        // Tree locations are UTF-8 byte offsets, the parameters' Start is a string offset.
+        var mapper = new Utf8OffsetMapper(query);
+        var typeByStart = new Dictionary<int, string>();
+        foreach (var cast in tree.Descendants<TypeCast>())
+        {
+            if (cast.Arg?.Unwrap() is ParamRef { Location: >= 0 } parameter
+                && cast.TypeName is not null
+                && mapper.TryToCharOffset(parameter.Location, out var start)
+                && DeparseNode(cast.TypeName).TryGetValue(out var typeName))
+            {
+                typeByStart[start] = typeName;
+            }
+        }
+
+        return typeByStart.Count == 0
+            ? parameters
+            : parameters.Select(p => typeByStart.TryGetValue(p.Start, out var type) ? p with { TypeName = type } : p).ToList();
     }
 
     /// <summary>

@@ -167,6 +167,67 @@ public class NodeToolsTests
     }
 
     [Fact]
+    public void VisitsKnowTheirAncestors()
+    {
+        var tree = Parse("WITH r AS (SELECT a FROM inner_table) SELECT b FROM outer_table WHERE c IN (SELECT d FROM sub_table)");
+
+        var tables = tree.Walk().Where(visit => visit.Node is RangeVar)
+            .ToDictionary(visit => ((RangeVar)visit.Node).Relname);
+
+        // "Is this table inside a CTE?" and "inside a subquery in an expression?"
+        tables["inner_table"].FindAncestor<CommonTableExpr>().ShouldNotBeNull().Ctename.ShouldBe("r");
+        tables["outer_table"].FindAncestor<CommonTableExpr>().ShouldBeNull();
+        tables["sub_table"].FindAncestor<SubLink>().ShouldNotBeNull();
+        tables["outer_table"].FindAncestor<SubLink>().ShouldBeNull();
+
+        var ancestors = tables["inner_table"].Ancestors.ToList();
+        ancestors[0].ShouldBeSameAs(tables["inner_table"].Parent);
+        ancestors.Select(node => node.Descriptor.Name)
+            .ShouldBe(["SelectStmt", "CommonTableExpr", "WithClause", "SelectStmt", "RawStmt"]);
+        // The nearest SelectStmt is the CTE's own query, not the outer one.
+        tables["inner_table"].FindAncestor<SelectStmt>().ShouldBeSameAs(ancestors[0]);
+
+        tree.Walk().First().Ancestors.ShouldBeEmpty();
+        tree.Walk().First().FindAncestor<RawStmt>().ShouldBeNull();
+    }
+
+    [Fact]
+    public void VisitsKnowTheirStatement()
+    {
+        var tree = Parse("SELECT a FROM t1; UPDATE t2 SET x = 1 WHERE y IN (SELECT z FROM t3); DROP TABLE t4");
+
+        var tablesByStatement = tree.Walk()
+            .Where(visit => visit.Node is RangeVar)
+            .Select(visit => (((RangeVar)visit.Node).Relname, visit.StatementIndex, Kind: visit.Statement!.Stmt.Unwrap()!.Descriptor.Name));
+
+        tablesByStatement.ShouldBe([("t1", 0, "SelectStmt"), ("t2", 1, "UpdateStmt"), ("t3", 1, "UpdateStmt")]);
+
+        var statements = tree.Walk().Where(visit => visit.Node is RawStmt).ToList();
+        statements.Select(visit => visit.StatementIndex).ShouldBe([0, 1, 2]);
+        statements[2].Statement.ShouldBeSameAs(tree.Stmts[2]);
+
+        // A walk that does not start from the whole tree has no statement to report.
+        tree.Stmts[1].Walk().ShouldAllBe(visit => visit.Statement == null && visit.StatementIndex == null);
+    }
+
+    [Fact]
+    public void VisitorFormAlsoReportsAncestorsAndStatement()
+    {
+        var tree = Parse("SELECT 1; SELECT a FROM t WHERE b IN (SELECT c FROM u)");
+        var insideSubquery = new List<string>();
+
+        tree.Walk(visit =>
+        {
+            if (visit.Node is RangeVar table && visit.FindAncestor<SubLink>() is not null && visit.StatementIndex == 1)
+                insideSubquery.Add(table.Relname);
+
+            return WalkAction.Continue;
+        });
+
+        insideSubquery.ShouldBe(["u"]);
+    }
+
+    [Fact]
     public void ParameterRefsInOrderWithOffsets()
     {
         const string query = "SELECT * FROM t WHERE a = $1 AND b = $2 OR c = $1 AND d > $10";
@@ -186,6 +247,29 @@ public class NodeToolsTests
 
         parameter.Number.ShouldBe(5);
         query[parameter.Start..parameter.End].ShouldBe("$5");
+    }
+
+    [Fact]
+    public void ParameterRefsReportCastTypes()
+    {
+        const string query = "SELECT $1::int, CAST($2 AS numeric(10,2)), $3, '😀', $4::text[], $1 FROM t WHERE é = $5::timestamptz";
+
+        var parameters = Parser.ParameterRefs(query).GetValueOrThrow();
+
+        parameters.Select(parameter => (parameter.Number, parameter.TypeName)).ShouldBe(
+        [
+            (1, "int"), (2, "numeric(10, 2)"), (3, null), (4, "text[]"), (1, null), (5, "timestamptz")
+        ]);
+        parameters.Select(parameter => query[parameter.Start..parameter.End]).ShouldBe(["$1", "$2", "$3", "$4", "$1", "$5"]);
+    }
+
+    [Fact]
+    public void ParameterRefsWithoutTypesWhenTheQueryDoesNotParse()
+    {
+        // Scans, but is not valid SQL.
+        var parameters = Parser.ParameterRefs("SELECT $1::int FROM WHERE $2").GetValueOrThrow();
+
+        parameters.Select(parameter => (parameter.Number, parameter.TypeName)).ShouldBe([(1, null), (2, null)]);
     }
 
     [Fact]
