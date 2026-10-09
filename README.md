@@ -116,6 +116,48 @@ if (result.Error is null)
 
 `Parse` can also take `ParserOptions` as a list of flags i.e. `ParserOptions.DisableBackslashQuote | ParserOptions.DisableEscapeStringWarning`
 
+### Navigating the parse tree
+
+The parse tree has more than 270 node types, and reaching a node by hand means spelling out the whole path to it. These helpers avoid that:
+
+```csharp
+using PgSqlParser;
+
+var query = "SELECT c.name FROM customers c JOIN orders o ON o.customer_id = c.id; DROP TABLE tmp";
+var tree = Parser.Parse(query).GetValueOrThrow();
+
+// Every node of a type, anywhere in the tree
+foreach (var table in tree.Descendants<RangeVar>())
+{
+    Console.WriteLine(table.Relname);
+}
+// Output: customers, orders (DROP TABLE names its target as a plain name list, not a RangeVar)
+
+// Every node, with its parent and depth
+foreach (var visit in tree.Walk())
+{
+    Console.WriteLine($"{new string(' ', visit.Depth * 2)}{visit.Node.Descriptor.Name}");
+}
+
+// Pattern match on a statement without the .SelectStmt / .DropStmt property chain
+foreach (var stmt in tree.Stmts)
+{
+    var kind = stmt.Stmt.Unwrap() switch
+    {
+        SelectStmt => "select",
+        DropStmt => "drop",
+        _ => "other"
+    };
+    // The statement's text and kind
+    Console.WriteLine($"{kind}: {stmt.GetText(query)}");
+}
+// Output:
+// select: SELECT c.name FROM customers c JOIN orders o ON o.customer_id = c.id
+// drop: DROP TABLE tmp
+```
+
+`Walk` and `Descendants` visit parents before their children and siblings in field order, which is not always the order of the query text. `GetLocation()` returns a node's location if it has one; see [Offsets and non-ASCII text](#offsets-and-non-ascii-text) for its unit. Only statements record a length, so `GetText` is available for statements and not for other nodes.
+
 ### Scan
 
 Tokenize a query. Each token has its kind, its keyword kind and its `Start` and `End` offsets in the query string.
