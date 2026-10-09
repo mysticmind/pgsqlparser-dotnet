@@ -18,6 +18,28 @@ public enum TableRole
 }
 
 /// <summary>
+/// The part of a statement a column reference is in.
+/// </summary>
+public enum QueryClause
+{
+    /// <summary>Somewhere not covered by the other values.</summary>
+    Other,
+    SelectList,
+    From,
+
+    /// <summary>The ON condition of a join, or of MERGE.</summary>
+    JoinCondition,
+    Where,
+    GroupBy,
+    Having,
+    OrderBy,
+    Returning,
+
+    /// <summary>The SET list of an UPDATE.</summary>
+    Set
+}
+
+/// <summary>
 /// A table named in a query.
 /// </summary>
 /// <param name="Node">The node that names it.</param>
@@ -60,6 +82,12 @@ public sealed record FunctionReference(FuncCall Node, string? Schema, string Nam
 /// <param name="StatementIndex">The top-level statement it is in, when known.</param>
 public sealed record ColumnReference(ColumnRef Node, string? Qualifier, string Name, TableReference? Table, int? StatementIndex)
 {
+    /// <summary>
+    /// The clause of the nearest enclosing statement the column is in. Columns in <see cref="QueryClause.Where"/>
+    /// and <see cref="QueryClause.JoinCondition"/> are the ones that filter rows.
+    /// </summary>
+    public QueryClause Clause { get; init; }
+
     public override string ToString() => Qualifier is null ? Name : $"{Qualifier}.{Name}";
 }
 
@@ -101,11 +129,16 @@ public static class QueryReferenceExtensions
         var functions = new List<FunctionReference>();
         var columnVisits = new List<NodeVisit>();
         var tableByNode = new Dictionary<RangeVar, TableReference>(ReferenceEqualityComparer.Instance);
+        var visitByNode = new Dictionary<IMessage, NodeVisit>(ReferenceEqualityComparer.Instance);
 
         foreach (var visit in root.Walk())
         {
+            visitByNode[visit.Node] = visit;
             switch (visit.Node)
             {
+                // FOR UPDATE OF x names an item of the FROM clause, not another table.
+                case RangeVar when visit.Parent is LockingClause:
+                    break;
                 case RangeVar table:
                     var reference = new TableReference(table, RoleOf(visit, top), IsCte(table, visit, top), visit.StatementIndex);
                     tables.Add(reference);
@@ -122,7 +155,9 @@ public static class QueryReferenceExtensions
         }
 
         // Columns are resolved last, since a column can come before the table it belongs to.
-        var columns = columnVisits.Select(visit => ResolveColumn(visit, top, tableByNode)).ToList();
+        var columns = columnVisits
+            .Select(visit => ResolveColumn(visit, top, tableByNode) with { Clause = ClauseOf(visit, top, visitByNode) })
+            .ToList();
         return new QueryReferences(tables, functions, columns);
     }
 
@@ -183,6 +218,37 @@ public static class QueryReferenceExtensions
         }
 
         return false;
+    }
+
+    // Climbs from the column to the nearest statement and maps the property it hangs from.
+    private static QueryClause ClauseOf(NodeVisit visit, IMessage top, Dictionary<IMessage, NodeVisit> visitByNode)
+    {
+        var current = visit;
+        while (true)
+        {
+            var parent = current.Parent ?? top;
+            if (parent is JoinExpr && current.FieldName == nameof(JoinExpr.Quals))
+                return QueryClause.JoinCondition;
+
+            if (parent is SelectStmt or UpdateStmt or DeleteStmt or InsertStmt or MergeStmt)
+            {
+                return current.FieldName switch
+                {
+                    nameof(SelectStmt.TargetList) => parent is UpdateStmt ? QueryClause.Set : QueryClause.SelectList,
+                    nameof(SelectStmt.FromClause) or nameof(DeleteStmt.UsingClause) => QueryClause.From,
+                    nameof(SelectStmt.WhereClause) => QueryClause.Where,
+                    nameof(SelectStmt.GroupClause) => QueryClause.GroupBy,
+                    nameof(SelectStmt.HavingClause) => QueryClause.Having,
+                    nameof(SelectStmt.SortClause) => QueryClause.OrderBy,
+                    nameof(MergeStmt.JoinCondition) => QueryClause.JoinCondition,
+                    { } name when name.StartsWith("Returning", StringComparison.Ordinal) => QueryClause.Returning,
+                    _ => QueryClause.Other
+                };
+            }
+
+            if (current.Parent is null || !visitByNode.TryGetValue(current.Parent, out current))
+                return QueryClause.Other;
+        }
     }
 
     private static ColumnReference ResolveColumn(NodeVisit visit, IMessage top, Dictionary<RangeVar, TableReference> tableByNode)

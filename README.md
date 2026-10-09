@@ -382,6 +382,34 @@ foreach (var column in references.Columns)
 
 A column is matched to its table when the query alone settles it: its qualifier names a table or alias in scope, or it has no qualifier and there is only one table in scope. Otherwise `Table` is null, because it would take the database catalog to tell. `Summary` returns similar information as plain names and is faster; use `GetReferences` when you need the nodes, aliases or column matching.
 
+Each column also has a `Clause` (select list, WHERE, join condition, GROUP BY, and so on), so the columns that filter rows are `references.Columns.Where(c => c.Clause is QueryClause.Where or QueryClause.JoinCondition)`. For a SELECT, `GetOutputColumns()` lists the result columns with the names PostgreSQL gives them:
+
+```csharp
+var select = Parser.Parse("SELECT id, lower(name), total AS amount, 1 FROM t").GetValueOrThrow().Stmts[0].Stmt.SelectStmt;
+Console.WriteLine(string.Join(", ", select.GetOutputColumns().Select(column => column.Name)));
+// Output: id, lower, amount, ?column?
+```
+
+### Locks
+
+Find out which table locks a statement takes, and what they block. This follows PostgreSQL's documented lock rules, and for ALTER TABLE the same per-sub-command rules PostgreSQL itself uses.
+
+```csharp
+using PgSqlParser;
+
+var script = "CREATE INDEX i ON orders (customer_id); ALTER TABLE orders ADD COLUMN note text; ALTER TABLE orders VALIDATE CONSTRAINT fk";
+foreach (var tableLock in Parser.Parse(script).GetValueOrThrow().GetLocks())
+{
+    Console.WriteLine($"{tableLock}  blocks reads: {tableLock.Mode.BlocksReads()}, blocks writes: {tableLock.Mode.BlocksWrites()}");
+}
+// Output:
+// orders: Share  blocks reads: False, blocks writes: True
+// orders: AccessExclusive  blocks reads: True, blocks writes: True
+// orders: ShareUpdateExclusive  blocks reads: False, blocks writes: False
+```
+
+It reports locks on the tables a statement names. It cannot see locks on tables reached through a view, an index name, a partition or a trigger, since those need the database catalog, and it does not cover row-level locks. See the documentation of `GetLocks` for the list of statements covered.
+
 ### Format
 
 Format a query across indented lines, keeping its comments. Each statement of a script is formatted on its own.
@@ -403,6 +431,38 @@ Console.WriteLine(formatted);
 ```
 
 `FormatOptions` sets the indent size, the line length, comma placement, a trailing newline, and whether comments are kept.
+
+### Tokenize
+
+Split a query into tokens classified for display, for syntax highlighting and similar uses. It works on SQL that does not parse, as long as it can be tokenized.
+
+```csharp
+using PgSqlParser;
+
+var query = "SELECT name FROM users WHERE id = $1 -- by id";
+foreach (var token in Parser.Tokenize(query).GetValueOrThrow())
+{
+    Console.WriteLine($"{query[token.Start..token.End]}: {token.Kind}");
+}
+// Output: SELECT: Keyword, name: Keyword, FROM: Keyword, users: Identifier, WHERE: Keyword, id: Identifier,
+//         =: Operator, $1: Parameter, -- by id: Comment
+```
+
+`name` is a keyword to PostgreSQL, though an unreserved one; `token.KeywordKind` tells reserved keywords from those usable as names.
+
+### OperationSummary
+
+Describe a query in a few low-cardinality words: the operation and the tables it touches. Literals, parameters and columns are left out, so it is safe as a span name or a metric label. This is the form OpenTelemetry's `db.query.summary` attribute asks for.
+
+```csharp
+using PgSqlParser;
+
+Console.WriteLine(Parser.OperationSummary("SELECT c.name FROM customers c JOIN orders o ON o.cid = c.id WHERE c.email = 'a@b.c'").GetValueOrThrow());
+// Output: SELECT customers orders
+
+Console.WriteLine(Parser.OperationSummary("INSERT INTO audit SELECT * FROM users").GetValueOrThrow());
+// Output: INSERT audit users
+```
 
 ### ParameterRefs
 
@@ -482,6 +542,16 @@ foreach (var query in function.Queries())
     Console.WriteLine(query);
 }
 // Output: SELECT * FROM foo WHERE fooid > 0
+```
+
+`function.ParseQueries()` goes one step further and parses each of those pieces of SQL, in the mode PL/pgSQL itself uses for it, so a function body can be analysed with the same tools as any query:
+
+```csharp
+var tables = function.ParseQueries()
+    .Where(query => query.Tree is not null)
+    .SelectMany(query => query.Tree!.GetReferences().Tables)
+    .Select(table => table.Name);
+// foo
 ```
 
 libpg_query has no schema for its PL/pgSQL output, so a node (`PlpgsqlNode`) exposes its `Kind`, its `Children` and its raw `Json` (a `JsonElement`) and not typed properties per statement kind.
@@ -716,6 +786,9 @@ All additions; nothing from 2.0 changes.
 - **Classify statements**: `Parser.Classify` gives each statement's kind, whether it is read-only, and facts such as a data-modifying CTE, `SELECT INTO`, a locking clause or `EXPLAIN ANALYZE`.
 - **Resolved references**: `GetReferences` returns the tables, functions and columns of a query as nodes, with table roles (read, write, DDL), CTE detection and columns matched to their table.
 - **Parameters**: `ParameterRefs` finds each `$n`, where it is, and the type it is cast to.
+- **Query shape**: each column reference knows its clause (WHERE, join condition, GROUP BY, ...), and `GetOutputColumns` names a SELECT's result columns as PostgreSQL does.
+- **Locks**: `GetLocks` reports the table locks a statement takes and what they block.
+- **Inside PL/pgSQL**: `ParseQueries` parses the SQL in a function body.
 
 **Working with the tree**
 
@@ -734,6 +807,8 @@ All additions; nothing from 2.0 changes.
 
 - **Format in one call**: `Parser.Format` pretty prints a query or a script and keeps its comments.
 - **Readable errors**: `Error.Format` and `Error.GetLineAndColumn`.
+- **Tokens for display**: `Parser.Tokenize` classifies each token as keyword, identifier, literal, comment and so on.
+- **Telemetry summary**: `Parser.OperationSummary` gives the short form OpenTelemetry's `db.query.summary` asks for.
 - **Parse fragments**: `ParseExpression` and `ParseTypeName`.
 - **Identifier quoting**: `PgIdentifier.Quote`, following PostgreSQL's `quote_ident`.
 

@@ -81,6 +81,17 @@ Check("ToDropStatement", Parser.Parse("CREATE TABLE s.t (a int)").Value!.ToDropS
 var visitedTables = 0;
 rewritten.Walk(new NodeVisitor().On<RangeVar>((_, _) => visitedTables++), new NodeVisitor().On<ParamRef>((_, _) => WalkAction.Stop));
 Check("NodeVisitor", visitedTables == 1);
+Check("GetLocks", Parser.Parse("ALTER TABLE t VALIDATE CONSTRAINT c; CREATE INDEX i ON t (a)").Value!.GetLocks()
+    .Select(l => l.Mode).SequenceEqual([LockMode.ShareUpdateExclusive, LockMode.Share]));
+var shape = Parser.Parse("SELECT id, lower(name) AS n FROM t WHERE a = 1").Value!;
+Check("Clauses and output columns", shape.GetReferences().Columns.Last().Clause == QueryClause.Where
+                                    && shape.Stmts[0].Stmt.SelectStmt.GetOutputColumns().Select(c => c.Name).SequenceEqual(["id", "n"]));
+Check("Tokenize", Parser.Tokenize("SELECT 1 -- x").Value?.Select(t => t.Kind)
+    .SequenceEqual([SqlTokenKind.Keyword, SqlTokenKind.NumericLiteral, SqlTokenKind.Comment]) == true);
+Check("OperationSummary", Parser.OperationSummary("SELECT * FROM a JOIN b ON true WHERE x = 'secret'").Value == "SELECT a b");
+Check("PL/pgSQL ParseQueries", Parser.ParsePlpgsqlFunctions(
+    "CREATE FUNCTION f() RETURNS void AS $$ BEGIN PERFORM x FROM items; END $$ LANGUAGE plpgsql").Value![0]
+    .ParseQueries().Single().Tree!.GetReferences().Tables.Single().Name == "items");
 Check("ParameterRefs", Parser.ParameterRefs("SELECT $1, '$2', $3").Value?.Select(p => p.Number).SequenceEqual([1, 3]) == true);
 Check("ParsePlpgsqlFunctions", Parser.ParsePlpgsqlFunctions(
     "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql").Value?[0].Queries().SequenceEqual(["1"]) == true);

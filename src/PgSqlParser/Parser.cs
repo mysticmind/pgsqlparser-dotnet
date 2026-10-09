@@ -1052,6 +1052,148 @@ public static class Parser
     }
 
     /// <summary>
+    /// Split a query into tokens classified for display: keywords, identifiers, literals, parameters,
+    /// operators, punctuation and comments. Whitespace is not a token. See <see cref="Scan"/> for the
+    /// raw scanner output.
+    /// </summary>
+    /// <param name="query"></param>
+    /// <returns></returns>
+    public static Result<IReadOnlyList<SqlToken>> Tokenize(string query)
+    {
+        if (!Scan(query).TryGetValue(out var scan, out var error))
+            return Result<IReadOnlyList<SqlToken>>.Failure(error);
+
+        var tokens = new List<SqlToken>(scan.Tokens.Count);
+        foreach (var token in scan.Tokens)
+        {
+            tokens.Add(new SqlToken(token.Start, token.End, SqlTokenClassifier.KindOf(token.Token, token.KeywordKind),
+                token.Token, token.KeywordKind));
+        }
+
+        return Result<IReadOnlyList<SqlToken>>.Success(tokens);
+    }
+
+    /// <summary>
+    /// Async split a query into classified tokens
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public static Task<Result<IReadOnlyList<SqlToken>>> TokenizeAsync(string query, CancellationToken cancellationToken = default)
+    {
+        return RunAsync(() => Tokenize(query), cancellationToken);
+    }
+
+    /// <summary>
+    /// Describe a query in a few low-cardinality words: the operation and the tables it touches, such as
+    /// <c>SELECT customers orders</c> or <c>INSERT audit</c>. Literals, parameters and columns are left
+    /// out, so it is safe to use as a span name or metric label. This is the form OpenTelemetry's
+    /// <c>db.query.summary</c> attribute asks for.
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="maxLength">The summary is cut at a word boundary to fit. 255 is OpenTelemetry's limit.</param>
+    /// <returns></returns>
+    public static Result<string> OperationSummary(string query, int maxLength = 255)
+    {
+        if (!Parse(query).TryGetValue(out var tree, out var error))
+            return Result<string>.Failure(error);
+
+        var parts = new List<string>();
+        foreach (var statement in tree.Stmts)
+        {
+            var words = new List<string> { OperationName(statement, query) };
+            var names = statement.GetReferences().Tables.Where(table => !table.IsCte).Select(table => table.ToString())
+                .Concat(DroppedRelations(statement));
+            foreach (var name in names)
+            {
+                if (!words.Contains(name))
+                    words.Add(name);
+            }
+
+            parts.Add(string.Join(' ', words));
+        }
+
+        var summary = string.Join("; ", parts);
+        if (summary.Length <= maxLength)
+            return Result<string>.Success(summary);
+
+        var cut = summary.LastIndexOf(' ', Math.Max(0, maxLength));
+        return Result<string>.Success(summary[..(cut > 0 ? cut : Math.Max(0, maxLength))].TrimEnd(';', ' '));
+    }
+
+    // The operation of a statement: SELECT, CREATE TABLE, DROP INDEX, VACUUM, ...
+    private static string OperationName(RawStmt statement, string query)
+    {
+        var node = statement.Stmt?.Unwrap();
+        var known = node switch
+        {
+            SelectStmt { ValuesLists.Count: > 0 } => "VALUES",
+            SelectStmt => "SELECT",
+            InsertStmt => "INSERT",
+            UpdateStmt => "UPDATE",
+            DeleteStmt => "DELETE",
+            MergeStmt => "MERGE",
+            CreateStmt => "CREATE TABLE",
+            CreateTableAsStmt { Objtype: ObjectType.ObjectMatview } => "CREATE MATERIALIZED VIEW",
+            CreateTableAsStmt => "CREATE TABLE",
+            IndexStmt => "CREATE INDEX",
+            ViewStmt => "CREATE VIEW",
+            CreateSeqStmt => "CREATE SEQUENCE",
+            CreateSchemaStmt => "CREATE SCHEMA",
+            CreateFunctionStmt { IsProcedure: true } => "CREATE PROCEDURE",
+            CreateFunctionStmt => "CREATE FUNCTION",
+            CreateTrigStmt => "CREATE TRIGGER",
+            AlterTableStmt { Objtype: ObjectType.ObjectIndex } => "ALTER INDEX",
+            AlterTableStmt => "ALTER TABLE",
+            DropStmt drop => drop.RemoveType switch
+            {
+                ObjectType.ObjectTable => "DROP TABLE",
+                ObjectType.ObjectIndex => "DROP INDEX",
+                ObjectType.ObjectView => "DROP VIEW",
+                ObjectType.ObjectMatview => "DROP MATERIALIZED VIEW",
+                ObjectType.ObjectSequence => "DROP SEQUENCE",
+                ObjectType.ObjectSchema => "DROP SCHEMA",
+                ObjectType.ObjectFunction => "DROP FUNCTION",
+                ObjectType.ObjectType => "DROP TYPE",
+                _ => "DROP"
+            },
+            _ => null
+        };
+        if (known is not null)
+            return known;
+
+        // For the rest, the keyword the statement starts with: GRANT, VACUUM, SET, BEGIN, EXPLAIN, ...
+        var text = statement.GetText(query);
+        if (Scan(text).TryGetValue(out var scan))
+        {
+            foreach (var token in scan.Tokens)
+            {
+                if (token.Token is not (Token.SqlComment or Token.CComment))
+                    return text[token.Start..token.End].ToUpperInvariant();
+            }
+        }
+
+        return node?.Descriptor.Name ?? "UNKNOWN";
+    }
+
+    // The tables a statement names outside of table references: the targets of DROP TABLE and similar.
+    private static IEnumerable<string> DroppedRelations(RawStmt statement)
+    {
+        if (statement.Stmt?.Unwrap() is not DropStmt { RemoveType: ObjectType.ObjectTable or ObjectType.ObjectView
+                or ObjectType.ObjectMatview or ObjectType.ObjectForeignTable } drop)
+        {
+            yield break;
+        }
+
+        foreach (var target in drop.Objects)
+        {
+            var parts = target.List?.Items.Select(part => part.String?.Sval).OfType<string>().ToList();
+            if (parts is { Count: > 0 })
+                yield return string.Join('.', parts);
+        }
+    }
+
+    /// <summary>
     /// Classify each statement of a query: its kind, whether it is read-only, and facts such as a
     /// data-modifying CTE or a locking clause. See <see cref="StatementInfo"/>.
     /// </summary>
