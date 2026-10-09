@@ -73,4 +73,45 @@ public class InvalidInputTests
 
         Should.Throw<ArgumentException>(() => Parser.Deparse(parseResult, options));
     }
+
+    [Theory]
+    // 60 chained operators, 30 nested subqueries and 60 nested calls each exceed 100 protobuf levels.
+    [InlineData("concat", 60)]
+    [InlineData("subquery", 30)]
+    [InlineData("call", 60)]
+    public async Task DeeplyNestedQueryReturnsAnError(string kind, int levels)
+    {
+        var query = DeepQuery(kind, levels);
+
+        var result = Parser.Parse(query);
+
+        result.IsSuccess.ShouldBeFalse();
+        result.Error.Message.ShouldBe("parse tree is nested too deeply to read");
+        (await Parser.ParseAsync(query)).Error.ShouldBe(result.Error);
+        // Only reading the parse tree is limited; the other APIs handle the same query.
+        Parser.Fingerprint(query).IsSuccess.ShouldBeTrue();
+        Parser.Scan(query).IsSuccess.ShouldBeTrue();
+        Parser.Summary(query).IsSuccess.ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("concat", 30)]
+    [InlineData("subquery", 15)]
+    [InlineData("call", 30)]
+    public void ModeratelyNestedQueryParses(string kind, int levels)
+    {
+        var query = DeepQuery(kind, levels);
+
+        var tree = Parser.Parse(query).GetValueOrThrow();
+
+        Parser.Deparse(tree).IsSuccess.ShouldBeTrue();
+    }
+
+    private static string DeepQuery(string kind, int levels) => kind switch
+    {
+        "concat" => "SELECT " + string.Join(" || ", Enumerable.Repeat("a", levels)),
+        "subquery" => string.Concat(Enumerable.Repeat("SELECT * FROM (", levels)) + "SELECT 1"
+                      + string.Concat(Enumerable.Range(0, levels).Select(i => $") s{i}")),
+        _ => "SELECT " + string.Concat(Enumerable.Repeat("f(", levels)) + "1" + new string(')', levels)
+    };
 }

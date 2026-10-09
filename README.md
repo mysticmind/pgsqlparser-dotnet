@@ -378,6 +378,8 @@ Two kinds of invalid input are caught before the query reaches libpg_query:
 - A `null` query throws `ArgumentNullException`.
 - A query containing a NUL character (`\0`) returns an `Error` with the message `query contains a NUL character`. PostgreSQL does not allow NUL in queries.
 
+`Parse` also has a nesting limit. A parse tree nested more than 100 levels deep cannot be read, and `Parse` returns an `Error` with the message `parse tree is nested too deeply to read`. A chain of about 50 operators without parentheses (for example `a || b || c ...`) or about 25 nested subqueries reaches it. `Scan`, `Fingerprint`, `Normalize`, `Summary` and the split functions are not affected.
+
 ## Upgrading from 1.x
 
 Version 2.0 moves from the PostgreSQL 17 parser to PostgreSQL 18, which changes some results:

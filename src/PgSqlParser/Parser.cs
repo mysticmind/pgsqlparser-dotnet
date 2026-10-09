@@ -372,9 +372,21 @@ public static class Parser
 
         try
         {
-            return result.error == IntPtr.Zero 
-                ? Result<ParseResult>.Success(ParseResult.Parser.ParseFrom(ReadProtobuf(result.parse_tree))) 
-                : Result<ParseResult>.Failure(ParseError(result.error));
+            if (result.error != IntPtr.Zero)
+                return Result<ParseResult>.Failure(ParseError(result.error));
+
+            try
+            {
+                return Result<ParseResult>.Success(ParseResult.Parser.ParseFrom(ReadProtobuf(result.parse_tree)));
+            }
+            catch (InvalidProtocolBufferException)
+            {
+                // Protobuf refuses to read messages nested more than 100 levels deep. Raising that
+                // limit is not safe: reading each level takes several kilobytes of stack, so a deeper
+                // tree can overflow the stack of an ordinary thread, which kills the process.
+                return Result<ParseResult>.Failure(
+                    new Error("parse tree is nested too deeply to read", null, null, 0, 0, null));
+            }
         }
         finally
         {
