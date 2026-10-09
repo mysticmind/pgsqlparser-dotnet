@@ -21,6 +21,21 @@ Note that the libpg_query libs for all OS'es are already packaged with the assem
 
 This version is built on libpg_query 18.1.0, which uses the PostgreSQL 18.6 parser. It targets .NET 8, .NET 9 and .NET 10, and is compatible with trimming and Native AOT.
 
+### Keeping deployments small
+
+The package contains the native library for every platform above, which is about 30 MB once unpacked. A portable publish copies all of them into your output. When deployment size matters, for example in a container image or a serverless function, publish for the platform you run on and only that platform's library is included:
+
+```shell
+dotnet publish -r linux-x64
+```
+
+| Publish command | Output size | Native libraries included |
+|---|---|---|
+| `dotnet publish` | about 31 MB | all 8 |
+| `dotnet publish -r linux-x64` | about 5 MB | 1 |
+
+The sizes are for a small framework-dependent app. The runtime identifier must match where the app runs: use `linux-musl-x64` on Alpine, and the `arm64` variants on ARM64.
+
 ## Usage
 
 All functions support both sync and async versions.
