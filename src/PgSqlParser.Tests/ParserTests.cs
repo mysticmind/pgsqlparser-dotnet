@@ -84,6 +84,47 @@ public class ParserTests
                 result.Value.ShouldBe(query);
         }
     }
+
+    [Fact]
+    public void DeParseWithComments()
+    {
+        var items = Utils.ReadLines("deparse_tests.txt").ToArray();
+        for (var i = 0; i < items.Length; i += 1)
+        {
+            var query = items[i].Replace("\\n", "\n");
+            var parseResult = Parser.Parse(query).Value.ShouldNotBeNull();
+            var comments = (Parser.DeparseComments(query)).Value.ShouldNotBeNull();
+            var result = Parser.Deparse(parseResult, new DeparseOptions { Comments = comments });
+
+            // With its comments passed back in, every query round-trips exactly.
+            result.Value.ShouldBe(query);
+        }
+    }
+
+    [Fact]
+    public void DeParsePrettyPrint()
+    {
+        var parseResult = Parser.Parse("SELECT a, b FROM t JOIN u ON t.id = u.id WHERE x = 1 AND y = 2 ORDER BY a").Value.ShouldNotBeNull();
+
+        (Parser.Deparse(parseResult, new DeparseOptions { PrettyPrint = true })).Value
+            .ShouldBe("SELECT a, b\nFROM\n    t\n    JOIN u ON t.id = u.id\nWHERE\n    x = 1\n    AND y = 2\nORDER BY a");
+        (Parser.Deparse(parseResult, new DeparseOptions
+        {
+            PrettyPrint = true, IndentSize = 2, MaxLineLength = 10, TrailingNewline = true, CommasStartOfLine = true
+        })).Value
+            .ShouldBe("SELECT a , b\nFROM\n  t\n  JOIN u ON t.id = u.id\nWHERE\n  x = 1\n  AND y = 2\nORDER BY a\n");
+    }
+
+    [Fact]
+    public void DeParseRejectsInvalidTree()
+    {
+        var parseResult = new ParseResult { Stmts = { new RawStmt() } };
+
+        var result = Parser.Deparse(parseResult, new DeparseOptions());
+
+        result.IsSuccess.ShouldBeFalse();
+        result.Error.ShouldNotBeNull().Message.ShouldNotBeNullOrEmpty();
+    }
     
     [Fact]
     public void SplitWithScanner()

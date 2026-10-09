@@ -12,7 +12,7 @@ dotnet add package pgsqlparser
 
 Note that the libpg_query libs for all OS'es are already packaged with the assembly.
 
-This version is built on libpg_query 18.1.0, which uses the PostgreSQL 18.6 parser.
+This version is built on libpg_query 18.1.0, which uses the PostgreSQL 18.6 parser. It targets .NET 8, .NET 9 and .NET 10.
 
 ## Usage
 
@@ -231,6 +231,47 @@ if (result.Error is null)
 
 // Output: SELECT 1
 ```
+
+Pass `DeparseOptions` to pretty print the output:
+
+```csharp
+var parseResult = Parser.Parse("SELECT a, b FROM t WHERE x = 1 AND y = 2").Value!;
+var result = Parser.Deparse(parseResult, new DeparseOptions { PrettyPrint = true });
+
+// Output:
+// SELECT a, b
+// FROM t
+// WHERE
+//     x = 1
+//     AND y = 2
+```
+
+Comments are not part of the parse tree. To keep them, extract them with `DeparseComments` and pass them back in:
+
+```csharp
+var query = "SELECT 1 /* one */";
+var parseResult = Parser.Parse(query).Value!;
+var comments = Parser.DeparseComments(query).Value!;
+var result = Parser.Deparse(parseResult, new DeparseOptions { Comments = comments });
+
+// Output: SELECT 1 /* one */
+```
+
+### Offsets and non-ASCII text
+
+.NET strings are UTF-16 while libpg_query works on UTF-8 bytes, so the unit of an offset depends on where it comes from:
+
+- `Scan` token `Start`/`End` and `SplitStmt.Location`/`Length` are UTF-16 offsets, ready to use with `string.Substring`.
+- Parse tree locations (for example `RawStmt.StmtLocation` and node `Location`) and `DeparseComment.MatchLocation` are UTF-8 byte offsets. Use `Utf8OffsetMapper` to convert them:
+
+```csharp
+using PgSqlParser.Utils;
+
+var mapper = new Utf8OffsetMapper(query);
+var charOffset = mapper.ToCharOffset(node.Location);
+```
+
+- `Error.CursorPos` is a 1-based position in Unicode code points, as PostgreSQL reports it.
 
 ### Parse Errors
 

@@ -95,6 +95,36 @@ internal static class LibPgQuery
     }
     
     [StructLayout(LayoutKind.Sequential)]
+    public struct PostgresDeparseComment
+    {
+        public int match_location;
+        public int newlines_before_comment;
+        public int newlines_after_comment;
+        public IntPtr str;
+    }
+
+    // C bool fields are declared as byte to keep the struct blittable.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PostgresDeparseOpts
+    {
+        public IntPtr comments; // PostgresDeparseComment**
+        public UIntPtr comment_count;
+        public byte pretty_print;
+        public int indent_size;
+        public int max_line_length;
+        public byte trailing_newline;
+        public byte commas_start_of_line;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PgQueryDeparseCommentsResult
+    {
+        public IntPtr comments; // PostgresDeparseComment**
+        public UIntPtr comment_count;
+        public IntPtr error;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct PgQueryIsUtilityResult
     {
         public int length;
@@ -148,6 +178,12 @@ internal static class LibPgQuery
    
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern PgQueryDeparseResult pg_query_deparse_protobuf(PgQueryProtobuf parse_tree);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern PgQueryDeparseResult pg_query_deparse_protobuf_opts(PgQueryProtobuf parse_tree, PostgresDeparseOpts opts);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern PgQueryDeparseCommentsResult pg_query_deparse_comments_for_query([MarshalAs(UnmanagedType.LPUTF8Str)] string query);
    
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern PgQueryIsUtilityResult pg_query_is_utility_stmt([MarshalAs(UnmanagedType.LPUTF8Str)] string query);
@@ -169,6 +205,9 @@ internal static class LibPgQuery
    
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void pg_query_free_deparse_result(PgQueryDeparseResult result);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void pg_query_free_deparse_comments_result(PgQueryDeparseCommentsResult result);
    
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void pg_query_free_protobuf_parse_result(PgQueryProtobufParseResult result);
