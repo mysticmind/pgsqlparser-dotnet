@@ -271,6 +271,12 @@ var mapper = new Utf8OffsetMapper(query);
 var charOffset = mapper.ToCharOffset(node.Location);
 ```
 
+It also converts the other way, for example to compare a position in the string (such as an editor caret) against parse tree locations:
+
+```csharp
+var byteOffset = mapper.ToByteOffset(caretIndex);
+```
+
 - `Error.CursorPos` is a 1-based position in Unicode code points, as PostgreSQL reports it. Use `Error.GetCursorCharOffset(query)` to get the matching string offset:
 
 ```csharp
