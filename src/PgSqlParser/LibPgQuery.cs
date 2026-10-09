@@ -95,40 +95,40 @@ internal static class LibPgQuery
     }
     
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryNormalizeResult pg_query_normalize(string input);
+    public static extern PgQueryNormalizeResult pg_query_normalize([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
     
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryNormalizeResult pg_query_normalize_utility(string input);
+    public static extern PgQueryNormalizeResult pg_query_normalize_utility([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
     
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryScanResult pg_query_scan(string input);
+    public static extern PgQueryScanResult pg_query_scan([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryParseResult pg_query_parse(string input);
+    public static extern PgQueryParseResult pg_query_parse([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryParseResult pg_query_parse_opts(string input, int parser_options);
+    public static extern PgQueryParseResult pg_query_parse_opts([MarshalAs(UnmanagedType.LPUTF8Str)] string input, int parser_options);
    
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryProtobufParseResult pg_query_parse_protobuf(string input);
+    public static extern PgQueryProtobufParseResult pg_query_parse_protobuf([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryProtobufParseResult pg_query_parse_protobuf_opts(string input, int parser_options);
+    public static extern PgQueryProtobufParseResult pg_query_parse_protobuf_opts([MarshalAs(UnmanagedType.LPUTF8Str)] string input, int parser_options);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryPlpgsqlParseResult pg_query_parse_plpgsql(string input);
+    public static extern PgQueryPlpgsqlParseResult pg_query_parse_plpgsql([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
   
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryFingerprintResult pg_query_fingerprint(string input);
+    public static extern PgQueryFingerprintResult pg_query_fingerprint([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
  
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQueryFingerprintResult pg_query_fingerprint_opts(string input, int parser_options);
+    public static extern PgQueryFingerprintResult pg_query_fingerprint_opts([MarshalAs(UnmanagedType.LPUTF8Str)] string input, int parser_options);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQuerySplitResult pg_query_split_with_scanner(string input);
+    public static extern PgQuerySplitResult pg_query_split_with_scanner([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
    
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern PgQuerySplitResult pg_query_split_with_parser(string input);
+    public static extern PgQuerySplitResult pg_query_split_with_parser([MarshalAs(UnmanagedType.LPUTF8Str)] string input);
    
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern PgQueryDeparseResult pg_query_deparse_protobuf(PgQueryProtobuf parse_tree);

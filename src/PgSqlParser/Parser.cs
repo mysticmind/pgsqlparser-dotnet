@@ -1,8 +1,13 @@
 using System.Runtime.InteropServices;
 using Google.Protobuf;
+using PgSqlParser.Utils;
 
 namespace PgSqlParser;
 
+/// <summary>
+/// <see cref="CursorPos"/> is a 1-based position in Unicode code points, as PostgreSQL reports it.
+/// It is neither a UTF-8 byte offset nor a UTF-16 offset.
+/// </summary>
 public record Error(string? Message, string? FuncName, string? FileName, int LineNo, int CursorPos, string? Context);
 
 public readonly struct Result<T>
@@ -34,6 +39,10 @@ public class SplitResult
     public List<SplitStmt> Statements { get; init; } = [];
 }
 
+/// <summary>
+/// <see cref="Location"/> and <see cref="Length"/> are UTF-16 code unit offsets into the split query.
+/// Parse tree locations use UTF-8 byte offsets.
+/// </summary>
 public record SplitStmt(int Location, int Length, string Text);
 
 [Flags]
@@ -136,9 +145,21 @@ public static class Parser
         var result = LibPgQuery.pg_query_scan(query);
         try
         {
-            return result.error == IntPtr.Zero
-                ? Result<ScanResult>.Success(ScanResult.Parser.ParseFrom(ReadProtobuf(result.pbuf)))
-                : Result<ScanResult>.Failure(ParseError(result.error));
+            if (result.error != IntPtr.Zero)
+                return Result<ScanResult>.Failure(ParseError(result.error));
+
+            var scanResult = ScanResult.Parser.ParseFrom(ReadProtobuf(result.pbuf));
+            var offsets = new Utf8OffsetMapper(query);
+            foreach (var token in scanResult.Tokens)
+            {
+                if (!offsets.TryToCharOffset(token.Start, out var start) || !offsets.TryToCharOffset(token.End, out var end))
+                    return Result<ScanResult>.Failure(OffsetError());
+
+                token.Start = start;
+                token.End = end;
+            }
+
+            return Result<ScanResult>.Success(scanResult);
         }
         finally
         {
@@ -271,18 +292,8 @@ public static class Parser
         {
             if (result.error != IntPtr.Zero)
                 return Result<SplitResult>.Failure(ParseError(result.error));
-            
-            var nStmts = result.n_stmts;
-            var splitResult = new SplitResult();
-            for (var i = 0; i < nStmts; i++)
-            {
-                var stmtPtrPtr = Marshal.ReadIntPtr(result.stmts, i * IntPtr.Size);
-                var stmt = Marshal.PtrToStructure<LibPgQuery.PgQuerySplitStmt>(stmtPtrPtr);
-                var text = query.Substring(stmt.stmt_location, stmt.stmt_len);
-                splitResult.Statements.Add(new SplitStmt(stmt.stmt_location, stmt.stmt_len, text));
-            }
 
-            return Result<SplitResult>.Success(splitResult);
+            return BuildSplitResult(query, result.stmts, result.n_stmts);
         }
         finally
         {
@@ -318,21 +329,11 @@ public static class Parser
         {
             if (result.error != IntPtr.Zero)
                 return Result<SplitResult>.Failure(ParseError(result.error));
-            
-            var nStmts = result.n_stmts;
-            var splitResult = new SplitResult();
-            for (var i = 0; i < nStmts; i++)
-            {
-                var stmtPtrPtr = Marshal.ReadIntPtr(result.stmts, i * IntPtr.Size);
-                var stmt = Marshal.PtrToStructure<LibPgQuery.PgQuerySplitStmt>(stmtPtrPtr);
-                var text = query.Substring(stmt.stmt_location, stmt.stmt_len);
-                splitResult.Statements.Add(new SplitStmt(stmt.stmt_location, stmt.stmt_len, text));
-            }
 
-            return Result<SplitResult>.Success(splitResult);
+            return BuildSplitResult(query, result.stmts, result.n_stmts);
         }
         finally
-        {   
+        {
             LibPgQuery.pg_query_free_split_result(result);
         }
     }
@@ -389,6 +390,37 @@ public static class Parser
         return RunAsync(() => Deparse(parseResult), cancellationToken);
     }
     
+    /// <summary>
+    /// Converts libpg_query's UTF-8 byte offsets into UTF-16 offsets of <paramref name="query"/>.
+    /// </summary>
+    private static Result<SplitResult> BuildSplitResult(string query, IntPtr stmts, int nStmts)
+    {
+        var offsets = new Utf8OffsetMapper(query);
+        var splitResult = new SplitResult();
+
+        for (var i = 0; i < nStmts; i++)
+        {
+            var stmtPtrPtr = Marshal.ReadIntPtr(stmts, i * IntPtr.Size);
+            var stmt = Marshal.PtrToStructure<LibPgQuery.PgQuerySplitStmt>(stmtPtrPtr);
+
+            var byteEnd = stmt.stmt_location + stmt.stmt_len;
+            if (stmt.stmt_len < 0
+                || !offsets.TryToCharOffset(stmt.stmt_location, out var charStart)
+                || !offsets.TryToCharOffset(byteEnd, out var charEnd))
+            {
+                return Result<SplitResult>.Failure(OffsetError());
+            }
+
+            splitResult.Statements.Add(
+                new SplitStmt(charStart, charEnd - charStart, query.Substring(charStart, charEnd - charStart)));
+        }
+
+        return Result<SplitResult>.Success(splitResult);
+    }
+
+    private static Error OffsetError() =>
+        new("libpg_query offset does not map to the query", null, null, 0, 0, null);
+
     private static byte[] ReadProtobuf(LibPgQuery.PgQueryProtobuf pbuf)
     {
         var len = checked((int)pbuf.len);
