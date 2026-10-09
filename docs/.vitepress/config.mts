@@ -22,7 +22,7 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: false,
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}mark-light.svg` }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}favicon.svg` }],
     ['meta', { property: 'og:title', content: 'PgSqlParser' }],
     ['meta', { property: 'og:description', content: 'PostgreSQL SQL parser for .NET, built on libpg_query, the real PostgreSQL parser.' }],
     ['meta', { property: 'og:image', content: `https://mysticmind.github.io${base}icon-512.png` }],
@@ -46,6 +46,10 @@ export default defineConfig({
     ],
     outline: { level: [2, 3] },
     search: { provider: 'local' },
+    editLink: {
+      pattern: 'https://github.com/mysticmind/pgsqlparser-dotnet/edit/main/docs/:path',
+      text: 'Edit this page on GitHub',
+    },
     socialLinks: [{ icon: 'github', link: 'https://github.com/mysticmind/pgsqlparser-dotnet' }],
     footer: {
       message: 'Released under the MIT License.',

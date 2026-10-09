@@ -15,7 +15,7 @@
     <RepositoryUrl>https://github.com/mysticmind/pgsqlparser-dotnet</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>postgresql;postgres;pg;pgsql;sql;parser;sql-parser;ast;libpg_query;pg_query;deparse;formatter;sql-formatter;fingerprint;normalize;tokenizer;plpgsql;query-analysis;sql-rewrite;native-aot</PackageTags>
-    <PackageReleaseNotes>See https://github.com/mysticmind/pgsqlparser-dotnet#whats-new-in-21</PackageReleaseNotes>
+    <PackageReleaseNotes>See https://mysticmind.github.io/pgsqlparser-dotnet/guide/whats-new</PackageReleaseNotes>
     <AssemblyName>pgsqlparser</AssemblyName>
     <RootNamespace>PgSqlParser</RootNamespace>
   </PropertyGroup>
